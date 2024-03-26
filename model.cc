@@ -10,6 +10,8 @@ GridState<6> s_grid6;
 GridState<7> s_grid7;
 GridState<8> s_grid8;
 
+std::mt19937 s_random((std::random_device())());
+
 
 int main(int argc, char** argv) {
 	std::cout << "2x2: " << GridState<2>::BITS_PER_TILE << " bits-per-tile " << GridState<2>::GRID_BITS << " bits-per-grid" << std::endl;
@@ -19,4 +21,9 @@ int main(int argc, char** argv) {
 	std::cout << "6x6: " << GridState<6>::BITS_PER_TILE << " bits-per-tile " << GridState<6>::GRID_BITS << " bits-per-grid" << std::endl;
 	std::cout << "7x7: " << GridState<7>::BITS_PER_TILE << " bits-per-tile " << GridState<7>::GRID_BITS << " bits-per-grid" << std::endl;
 	std::cout << "8x8: " << GridState<8>::BITS_PER_TILE << " bits-per-tile " << GridState<8>::GRID_BITS << " bits-per-grid" << std::endl;
+
+	s_grid4.writeTile(0,0,1);
+	s_grid4.writeTile(3,3,4);
+
+	std::cout << s_grid4 << std::endl;
 }
