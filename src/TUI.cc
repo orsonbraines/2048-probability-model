@@ -7,6 +7,12 @@
 
 std::mt19937 s_random((std::random_device())());
 
+#if _MSC_VER
+#define IS_BACKSPACE(key) (key == 8)
+#else
+#define IS_BACKSPACE(key) (key == KEY_BACKSPACE)
+#endif
+
 enum class UIState {
 	GAME_ON,
 	GAME_OVER,
@@ -50,14 +56,17 @@ int main() {
 		}
 		refresh();
 		int key = getch();
-		if(key == KEY_BACKSPACE) {
+		bool keyHandled = false;
+		if(IS_BACKSPACE(key)) {
 			break;
 		}
 		else if(key == 'n') {
 			uiState = UIState::RESETING;
+			keyHandled = true;
 		}
 		else if(uiState == UIState::RESETING && key >= '0' && key <= '9') {
 			resetBuffer.push_back(key);
+			keyHandled = true;
 		}
 		else if(uiState == UIState::RESETING && key == '\n') {
 			if(resetBuffer.empty()) {
@@ -78,8 +87,10 @@ int main() {
 				}
 				resetBuffer.clear();
 			}
+			keyHandled = true;
 		}
 		else if(uiState == UIState::GAME_ON) {
+			keyHandled = true;
 			switch (key) {
 			case 'a':
 			case KEY_LEFT:
@@ -97,12 +108,15 @@ int main() {
 			case KEY_DOWN:
 				swipe(gameSize, game, 1, 0);
 				break;
+			default:
+				keyHandled = false;
 			}
 			if(isGameOver(gameSize, game)) {
 				uiState = UIState::GAME_OVER;
 			}
 		}
-		else {
+
+		if(!keyHandled) {
 			logFile << "Unrecognized key in state " << uint(uiState) << ": " << key << std::endl;
 		}
 	}

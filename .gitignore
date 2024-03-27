@@ -1,4 +1,7 @@
+.vs
 .vscode
 build
+src/out
+src/CMakeSettings.json
 src/TemplateAdaptor.cc
 *.log

@@ -15,7 +15,17 @@ extern std::mt19937 s_random;
 // Returns number of bits necessary to represent integers from 0 up to and including x
 // x = 0 is invalid input
 constexpr uint tileLog2(uint x) {
+#if _MSC_VER
+	uint numBits = 0;
+	while (x > 0) {
+		++numBits;
+		x >>= 1;
+	}
+
+	return numBits;
+#else
 	return 32u - __builtin_clz(x);
+#endif
 }
 
 template<uint N>
