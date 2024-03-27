@@ -1,10 +1,16 @@
 import sys
 
 compiled_sizes = {2, 3, 4, 5, 6, 7, 8}
+compiled_sizes_str_list = list(compiled_sizes)
+compiled_sizes_str_list = [str(s) for s in compiled_sizes_str_list]
 
 with open("TemplateAdaptor.cc", "w") as f:
 	f.write("#include <stdexcept>\n\n")
 	f.write("#include \"TemplateAdaptor.h\"\n\n")
+	# test size valid
+	f.write("std::vector<uint> getValidGameSizes() {\n")
+	f.write(f"\treturn std::vector<uint>{{ {','.join(compiled_sizes_str_list)} }};")
+	f.write("}\n\n")
 	# create game
 	f.write("void* createGame(uint N, double fourChance) {\n")
 	f.write("\tswitch(N) {\n")
@@ -42,6 +48,14 @@ with open("TemplateAdaptor.cc", "w") as f:
 	f.write("\tswitch(N) {\n")
 	for i in compiled_sizes:
 		f.write(f"\tcase {i}: (static_cast<Game<{i}>*>(game))->swipe(dirRow, dirCol); return;\n")
+	f.write(f"\tdefault: throw std::invalid_argument(\"Size must be one of {compiled_sizes}\");\n")
+	f.write("\t}\n")
+	f.write("}\n\n")
+	# is game over
+	f.write("bool isGameOver(uint N, void* game) {\n")
+	f.write("\tswitch(N) {\n")
+	for i in compiled_sizes:
+		f.write(f"\tcase {i}: return (static_cast<Game<{i}>*>(game))->isGameOver();\n")
 	f.write(f"\tdefault: throw std::invalid_argument(\"Size must be one of {compiled_sizes}\");\n")
 	f.write("\t}\n")
 	f.write("}\n\n")

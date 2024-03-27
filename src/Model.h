@@ -272,12 +272,17 @@ std::ostream& operator<<(std::ostream& o, const GridState<N, BITSET_T>& grid) {
 template<uint N>
 class Game {
 public:
-	Game(double fourChance) : m_fourChance{fourChance}, m_gameOver{false} { 
+	Game(double fourChance) : m_state(), m_fourChance{fourChance}, m_gameOver{false}, m_score{0} { 
 		m_state.genRand(fourChance);
 	}
-	void reset() { m_state = GridState<N>(); }
-	uint getScore() const { return m_score; }
+	void reset() { 
+		m_state = GridState<N>();
+		m_state.genRand(m_fourChance);
+		m_gameOver = false;
+		m_score = 0;
+	}
 	void swipe(int dirRow, int dirCol) {
+		assert(!m_gameOver);
 		GridState<N> prevState = m_state;
 		m_score += m_state.swipe(dirRow, dirCol);
 		if(m_state != prevState) {
@@ -286,6 +291,8 @@ public:
 		}
 	}
 
+	uint getScore() const { return m_score; }
+	bool isGameOver() const { return m_gameOver; }
 	const GridState<N>& getState() const { return m_state; }
 private:
 	void updateGameOver();
@@ -297,15 +304,15 @@ private:
 
 template<uint N>
 void Game<N>::updateGameOver() {
-	for(uint r = 0; r < N; ++r) {
-		for(uint c = 0; c < N; ++c) {
-			if(m_state.readTile(r,c) == 0) {
-				m_gameOver = false;
-				return;
-			}
-		}
-	}
-	m_gameOver = true;
+	GridState<N> clone1 = m_state;
+	clone1.swipe(1, 0);
+	GridState<N> clone2 = m_state;
+	clone2.swipe(-1, 0);
+	GridState<N> clone3 = m_state;
+	clone3.swipe(0, 1);
+	GridState<N> clone4 = m_state;
+	clone4.swipe(0,-1);
+	m_gameOver = (clone1 == m_state && clone2 == m_state && clone3 == m_state && clone4 == m_state);
 }
 
 template<uint N>
