@@ -1,4 +1,5 @@
-#include "model.h"
+#include "Model.h"
+#include "TemplateAdaptor.h"
 
 #include <iostream>
 
@@ -21,25 +22,24 @@ int main() {
 	std::cout << "6x6: " << GridState<6>::BITS_PER_TILE << " bits-per-tile " << GridState<6>::GRID_BITS << " bits-per-grid " << sizeof(GridState<6>) << " bytes in memory." << std::endl;
 	std::cout << "7x7: " << GridState<7>::BITS_PER_TILE << " bits-per-tile " << GridState<7>::GRID_BITS << " bits-per-grid " << sizeof(GridState<7>) << " bytes in memory." << std::endl;
 	std::cout << "8x8: " << GridState<8>::BITS_PER_TILE << " bits-per-tile " << GridState<8>::GRID_BITS << " bits-per-grid " << sizeof(GridState<8>) << " bytes in memory." << std::endl;
-
+	
 	double fourChance = 0.2;
+	void* game = createGame(3, fourChance);
+	printGame(std::cout, 3, game);
 	// [right, up, left, down]*5
 	for(int i = 0; i < 5; ++i) {
-		s_grid3.genRand(fourChance);
-		std::cout << s_grid3 << std::endl;
-		std::cout << s_grid3.swipe(0,1) << " points gained! [RIGHT]" << std::endl;
-		std::cout << s_grid3 << std::endl;
-		s_grid3.genRand(fourChance);
-		std::cout << s_grid3 << std::endl;
-		std::cout << s_grid3.swipe(-1,0) << " points gained! [UP]" << std::endl;
-		std::cout << s_grid3 << std::endl;
-		s_grid3.genRand(fourChance);
-		std::cout << s_grid3 << std::endl;
-		std::cout << s_grid3.swipe(0,-1) << " points gained! [LEFT]" << std::endl;
-		std::cout << s_grid3 << std::endl;
-		s_grid3.genRand(fourChance);
-		std::cout << s_grid3 << std::endl;
-		std::cout << s_grid3.swipe(1,0) << " points gained! [DOWN]" << std::endl;
-		std::cout << s_grid3 << std::endl;
+		std::cout << "[RIGHT]" << std::endl;
+		swipe(3, game, 0, 1);
+		printGame(std::cout, 3, game);
+		std::cout << "[UP]" << std::endl;
+		swipe(3, game, -1, 0);
+		printGame(std::cout, 3, game);
+		std::cout << "[LEFT]" << std::endl;
+		swipe(3, game, 0, -1);
+		printGame(std::cout, 3, game);
+		std::cout << "[DOWN]" << std::endl;
+		swipe(3, game, 1, 0);
+		printGame(std::cout, 3, game);
 	}
+	deleteGame(3, game);
 }

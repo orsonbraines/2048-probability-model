@@ -1,4 +1,4 @@
 .vscode
-a.out
 build
+src/TemplateAdaptor.cc
 *.log

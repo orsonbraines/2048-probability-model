@@ -3,12 +3,12 @@
 #include <bitset>
 #include <cassert>
 #include <cstdint>
+#include <cstring>
 #include <iostream>
 #include <random>
 #include <string>
 
-using uint32 = uint32_t;
-using uint = uint32_t;
+#include "Common.h"
 
 extern std::mt19937 s_random;
 
@@ -30,6 +30,7 @@ public:
 		if (v) m_data[n >> 3] |= (1u << (n & 0x7));
 		else m_data[n >> 3] &= ~(1u << (n & 0x7));
 	}
+	auto operator<=>(const packed_bitset<N>&) const = default;
 private:
 	uint8_t m_data[(N+7)/8];
 };
@@ -45,6 +46,8 @@ public:
 	void writeTile(uint row, uint col, uint tile);
 	uint swipe(int dirRow, int dirCol);
 	void genRand(double fourRatio);
+
+	auto operator<=>(const GridState<N, BITSET_T>&) const = default;
 private:
 	void swap(uint row1, uint col1, uint row2, uint col2);
 	uint slideCol(uint col, bool dir);
@@ -259,10 +262,45 @@ std::ostream& operator<<(std::ostream& o, const GridState<N, BITSET_T>& grid) {
 template<uint N>
 class Game {
 public:
+	Game(double fourChance) : m_fourChance{fourChance}, m_gameOver{false} { 
+		m_state.genRand(fourChance);
+	}
 	void reset() { m_state = GridState<N>(); }
 	uint getScore() const { return m_score; }
-	void swipe(int dirRow, int dirCol) { m_score += m_state.swipe(dirRow, dirCol); }
+	void swipe(int dirRow, int dirCol) {
+		GridState<N> prevState = m_state;
+		m_score += m_state.swipe(dirRow, dirCol);
+		if(m_state != prevState) {
+			m_state.genRand(m_fourChance);
+			updateGameOver();
+		}
+	}
+
+	const GridState<N>& getState() const { return m_state; }
 private:
+	void updateGameOver();
 	GridState<N> m_state;
 	uint m_score;
+	double m_fourChance;
+	bool m_gameOver;
 };
+
+template<uint N>
+void Game<N>::updateGameOver() {
+	for(uint r = 0; r < N; ++r) {
+		for(uint c = 0; c < N; ++c) {
+			if(m_state.readTile(r,c) == 0) {
+				m_gameOver = false;
+				return;
+			}
+		}
+	}
+	m_gameOver = true;
+}
+
+template<uint N>
+std::ostream& operator<<(std::ostream& o, const Game<N>& game) {
+	o << "Score: " << game.getScore() << std::endl;
+	o << game.getState();
+	return o;
+}
