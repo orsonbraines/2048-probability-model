@@ -1,0 +1,5 @@
+cmake_minimum_required(VERSION 3.16)
+project(2048-probability-model VERSION 0.0.0)
+message(WARNING "source dir ${PROJECT_SOURCE_DIR}")
+message(WARNING "bin dir ${PROJECT_BINARY_DIR}")
+add_executable(model_test model.cc)
