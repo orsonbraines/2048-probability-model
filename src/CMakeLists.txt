@@ -12,3 +12,5 @@ find_package (Python3 REQUIRED COMPONENTS Interpreter)
 execute_process(COMMAND "${Python3_EXECUTABLE}" "TemplateAdaptorGenerator.py" WORKING_DIRECTORY "${PROJECT_SOURCE_DIR}")
 
 add_executable(model_test ModelTest.cc TemplateAdaptor.cc)
+target_include_directories(model_test PRIVATE "${PROJECT_SOURCE_DIR}")
+target_compile_options(model_test PRIVATE "-g")

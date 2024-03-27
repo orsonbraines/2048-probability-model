@@ -30,7 +30,12 @@ public:
 		if (v) m_data[n >> 3] |= (1u << (n & 0x7));
 		else m_data[n >> 3] &= ~(1u << (n & 0x7));
 	}
-	auto operator<=>(const packed_bitset<N>&) const = default;
+	bool operator==(const packed_bitset<N> &that) {
+		return memcmp(this->m_data, that.m_data, (N+7)/8) == 0;
+	}
+	bool operator!=(const packed_bitset<N> &that) {
+		return !(*this == that);
+	}
 private:
 	uint8_t m_data[(N+7)/8];
 };
@@ -47,7 +52,12 @@ public:
 	uint swipe(int dirRow, int dirCol);
 	void genRand(double fourRatio);
 
-	auto operator<=>(const GridState<N, BITSET_T>&) const = default;
+	bool operator==(const GridState<N, BITSET_T> &that) {
+		return this->m_grid == that.m_grid;
+	}
+	bool operator!=(const GridState<N, BITSET_T> &that) {
+		return this->m_grid != that.m_grid;
+	}
 private:
 	void swap(uint row1, uint col1, uint row2, uint col2);
 	uint slideCol(uint col, bool dir);
