@@ -4,7 +4,7 @@ set(CMAKE_CXX_STANDARD 20)
 set(CMAKE_CXX_STANDARD_REQUIRED True)
 
 option(STATIC_LINK "Static link libraries")
-if(${STATIC_LINK})
+if(STATIC_LINK)
 	set(BUILD_SHARED_LIBS OFF)
 endif()
 
@@ -13,21 +13,36 @@ message(DEBUG "bin dir ${PROJECT_BINARY_DIR}")
 
 find_package (Python3 REQUIRED COMPONENTS Interpreter)
 # autogen TemplateAdaptor.cc
-execute_process(COMMAND ${Python3_EXECUTABLE} TemplateAdaptorGenerator.py WORKING_DIRECTORY ${PROJECT_SOURCE_DIR})
+execute_process(COMMAND ${Python3_EXECUTABLE} TemplateAdaptorGenerator.py WORKING_DIRECTORY ${PROJECT_SOURCE_DIR} RESULT_VARIABLE CODEGEN_STATUS)
+if(CODEGEN_STATUS AND NOT CODEGEN_STATUS EQUAL 0)
+	message(FATAL_ERROR "TemplateAdaptorGenerator.py FAILED: ${CODEGEN_STATUS}")
+endif()
 
-add_executable(model_test ModelTest.cc TemplateAdaptor.cc)
+add_executable(model_test
+	Common.h
+	Model.h
+	TemplateAdaptor.h
+	ModelTest.cc
+	TemplateAdaptor.cc
+)
 target_include_directories(model_test PRIVATE ${PROJECT_SOURCE_DIR})
-if(${MSVC})
+if(MSVC)
 	message(DEBUG "Currently not using any MSVC compile options")
 else()
 	target_compile_options(model_test PRIVATE -g)
 endif()
 
 find_package(Curses)
-if(${CURSES_FOUND})
+if(CURSES_FOUND)
 	message(DEBUG "include dirs: ${CURSES_INCLUDE_DIRS}")
 	message(DEBUG "link libs: ${CURSES_LIBRARIES}")
-	add_executable(tui TUI.cc TemplateAdaptor.cc)
+	add_executable(tui
+		Common.h
+		Model.h
+		TemplateAdaptor.h
+		TUI.cc
+		TemplateAdaptor.cc
+	)
 	target_include_directories(tui PRIVATE ${PROJECT_SOURCE_DIR} ${CURSES_INCLUDE_DIRS})
 	if(${MSVC})
 		message(DEBUG "Currently not using any MSVC compile options")
