@@ -4,18 +4,23 @@
 #include <array>
 #include <iostream>
 #include <utility>
+#include <vector>
 
 #include "ankerl/unordered_dense.h"
 #include "Common.h"
 #include "Model.h"
 
 template<uint N>
+using QueryResultsType = std::vector<std::tuple<int, GridState<N>, float>>;
+
+template<uint N>
 class ITablebase{
 public:
 	ITablebase(float fourChance) : m_fourChance(fourChance) {}
 	virtual ~ITablebase() {}
-	virtual void init(const GridState<N>& initState, int maxDepth = -1) = 0;
+	virtual void init(const GridState<N>& initState=GridState<N>(), int maxDepth = -1) = 0;
 	virtual float query(const GridState<N>& state) const = 0;
+	virtual void recursiveQuery(const GridState<N>& state, int currDepth, int maxDepth, QueryResultsType<N>& results) const = 0;
 protected:
 	const float m_fourChance;
 };
@@ -24,8 +29,9 @@ template<uint N>
 class InMemoryTablebase : public ITablebase<N> {
 public:
 	InMemoryTablebase(float fourChance) : ITablebase<N>(fourChance) {}
-	virtual void init(const GridState<N>& initState, int maxDepth = -1) override;
+	virtual void init(const GridState<N>& initState=GridState<N>(), int maxDepth = -1) override;
 	virtual float query(const GridState<N>& state) const override;
+	virtual void recursiveQuery(const GridState<N>& state, int currDepth, int maxDepth, QueryResultsType<N>& results) const override;
 	void dump(std::ostream &o) const;
 private:
 	void generateEdges(const GridState<N>& state, bool intermediate, int maxDepth, int depth);
@@ -51,6 +57,22 @@ float InMemoryTablebase<N>::query(const GridState<N>& state) const {
 }
 
 template<uint N>
+void InMemoryTablebase<N>::recursiveQuery(const GridState<N>& state, int currDepth, int maxDepth, QueryResultsType<N>& results) const {
+	if(currDepth > maxDepth) return;
+	bool intermediate = currDepth & 1;
+	results.emplace_back(std::make_tuple(currDepth, state, intermediate ? m_nodes.at(state).second : m_nodes.at(state).first));
+	auto it = m_edges.find(state);
+	if(it != m_edges.end()) {
+		for(const auto &p : it->second) {
+			const GridState<N>& childState = p.first;
+			float edgeWeight = p.second;
+			if((!intermediate && edgeWeight != -1.0f) || (intermediate && edgeWeight == -1.0f)) continue;
+			recursiveQuery(childState, currDepth + 1, maxDepth, results);
+		}
+	}
+}
+
+template<uint N>
 void InMemoryTablebase<N>::generateEdges(const GridState<N>& state, bool intermediate, int maxDepth, int depth) {
 	if((maxDepth >= 0 && depth > maxDepth) || m_edgesGenerated.count(std::make_pair(state, intermediate))) return;
 	m_edgesGenerated.insert(std::make_pair(state, intermediate));
@@ -68,7 +90,7 @@ void InMemoryTablebase<N>::generateEdges(const GridState<N>& state, bool interme
 					if(it == m_nodes.end()) {
 						m_nodes.insert(it, std::make_pair(child, std::make_pair(-1.0f, -1.0f)));
 					}
-					m_edges[state][child] = (i ? (1.0f - ITablebase<N>::m_fourChance) : ITablebase<N>::m_fourChance) / emptyTiles;
+					m_edges[state][child] = (i ? ITablebase<N>::m_fourChance : (1.0f - ITablebase<N>::m_fourChance)) / emptyTiles;
 					generateEdges(child, !intermediate, maxDepth, depth);
 				}
 			}
@@ -98,21 +120,31 @@ void InMemoryTablebase<N>::calculateScores(const GridState<N>& state, bool inter
 	// Already Calculated
 	if(m_calculatedScore.count(std::make_pair(state, intermediate))) return;
 	m_calculatedScore.insert(std::make_pair(state, intermediate));
+	DEBUG_LOG("Begin ");
+	DEBUG_EXEC(state.printCompact(std::cerr));
+	DEBUG_LOG("-" << intermediate << std::endl);
 
 	// Meets the win condition of having the max tile
 	// In the future this should be updated to handle alternate win conditions
 	if(state.hasTile(N*N + 1)) {
 		m_nodes[state] = std::make_pair(1.0f, 1.0f);
+		DEBUG_LOG("End ");
+		DEBUG_EXEC(state.printCompact(std::cerr));
+		DEBUG_LOG("-" << intermediate << std::endl);
 		return;
 	}
 	// Lost State
 	if(!state.hasMoves() && state != GridState<N>()) {
+		DEBUG_LOG("End ");
+		DEBUG_EXEC(state.printCompact(std::cerr));
+		DEBUG_LOG("-" << intermediate << std::endl);
 		m_nodes[state] = std::make_pair(0.0f, 0.0f);
 		return;
 	}
 	// Assume any non-final edge node has a score of 0.5
 	// In the future this will use an analysis algorithm to make a better guess
 	if(!m_edges.count(state) || m_edges[state].empty()) {
+		DEBUG_LOG("BADBADBADBADBADBADBADBADBADBADBADBADBADBADB");
 		m_nodes[state] = std::make_pair(0.5f, 0.5f);
 		return;
 	}
@@ -123,12 +155,17 @@ void InMemoryTablebase<N>::calculateScores(const GridState<N>& state, bool inter
 			auto& [childState, edgeWeight] = p;
 			calculateScores(childState, !intermediate);
 			if(edgeWeight != -1) {
+				DEBUG_LOG("real state contribution: ");
+				DEBUG_EXEC(state.printCompact(std::cerr));
+				DEBUG_LOG(" -> ");
+				DEBUG_EXEC(childState.printCompact(std::cerr));
+				DEBUG_LOG(": " << edgeWeight * m_nodes[childState].first << std::endl);
 				score += edgeWeight * m_nodes[childState].first;
 			}
 		}
 		DEBUG_LOG("calculated intermediate score: ");
 		DEBUG_EXEC(state.printCompact(std::cerr));
-		DEBUG_LOG(std::endl);
+		DEBUG_LOG(": " << score << std::endl);
 		m_nodes[state].second = score;
 	}
 	else {
@@ -137,14 +174,22 @@ void InMemoryTablebase<N>::calculateScores(const GridState<N>& state, bool inter
 			auto& [childState, edgeWeight] = p;
 			calculateScores(childState, !intermediate);
 			if(edgeWeight == -1) {
+				DEBUG_LOG("potential final score: ");
+				DEBUG_EXEC(state.printCompact(std::cerr));
+				DEBUG_LOG(" -> ");
+				DEBUG_EXEC(childState.printCompact(std::cerr));
+				DEBUG_LOG(": " << m_nodes[childState].second << std::endl);
 				score = std::max(score, m_nodes[childState].second);
 			} 
 		}
 		DEBUG_LOG("calculated final score: ");
 		DEBUG_EXEC(state.printCompact(std::cerr));
-		DEBUG_LOG(std::endl);
+		DEBUG_LOG(": " << score << std::endl );
 		m_nodes[state].first = score;
 	}
+	DEBUG_LOG("End ");
+	DEBUG_EXEC(state.printCompact(std::cerr));
+	DEBUG_LOG("-" << intermediate << std::endl);
 }
 
 template<uint N>
@@ -171,5 +216,15 @@ void InMemoryTablebase<N>::dump(std::ostream &o) const {
 				break;
 			}
 		}
+	}
+}
+
+template<uint N>
+inline void printQueryResults(std::ostream& o, const QueryResultsType<N>& results) {
+	for(const auto &t: results) {
+		auto &[depth, state, score] = t;
+		for(int i = 0; i < depth; ++i) o << ' ';
+		state.printCompact(o);
+		o << ": " << score << std::endl;
 	}
 }

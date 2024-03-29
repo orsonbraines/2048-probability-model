@@ -3,6 +3,7 @@
 #include <locale.h>
 #include <sstream>
 #include "Model.h"
+#include "Tablebase.h"
 #include "TemplateAdaptor.h"
 
 std::mt19937 s_random((std::random_device())());
@@ -38,6 +39,8 @@ int main() {
 	std::string resetBuffer = "";
 	uint gameSize = 4;
 	void* game = createGame(gameSize, 0.2);
+	InMemoryTablebase<2> tablebase(0.2f);
+	tablebase.init();
 
 	std::ofstream logFile("tui.log");
 
@@ -53,6 +56,12 @@ int main() {
 		if(uiState != UIState::RESETING) {
 			addch('\n');
 			writeGame(stdscr, game, gameSize);
+		}
+		if(gameSize == 2 && uiState == UIState::GAME_ON) {
+			addch('\n');
+			std::ostringstream str;
+			str << "Win chance: " << tablebase.query(static_cast<Game<2>*>(game)->getState());
+			addstr(str.str().c_str());
 		}
 		refresh();
 		int key = getch();

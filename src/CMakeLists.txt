@@ -61,6 +61,7 @@ if(CURSES_FOUND)
 	add_executable(tui
 		Common.h
 		Model.h
+		Tablebase.h
 		TemplateAdaptor.h
 		TUI.cc
 		TemplateAdaptor.cc
