@@ -38,7 +38,7 @@ public:
 	void dump(std::ostream &o) const;
 private:
 	void generateEdges(const GridState<N>& state, bool intermediate, int maxDepth, int depth);
-	void calculateScores(const GridState<N>& state);
+	void calculateScores();
 	ankerl::unordered_dense::map<GridState<N>, std::pair<float,float> /*final_score, intermediate_score*/> m_nodes;
 	ankerl::unordered_dense::map<GridState<N>, ankerl::unordered_dense::map<GridState<N>, float>> m_edges;
 	ankerl::unordered_dense::map<GridState<N>, std::vector<GridState<N>>> m_reverseEdges;
@@ -49,7 +49,7 @@ template<uint N>
 void InMemoryTablebase<N>::init(const GridState<N>& initState, int maxDepth) {
 	m_nodes[initState] = std::make_pair(-1.0f, -1.0f);
 	generateEdges(initState, true, maxDepth, 0);
-	calculateScores(initState);
+	calculateScores();
 	DEBUG_LOG("node count: " << m_nodes.size() << " edge count: " << m_edges.size() << std::endl);
 }
 
@@ -127,7 +127,7 @@ void InMemoryTablebase<N>::generateEdges(const GridState<N>& state, bool interme
 // Which causes us to try to get the score a second time before we're finished the first time.
 // To avoid these problems we can do a reverse BFS
 template<uint N>
-void InMemoryTablebase<N>::calculateScores(const GridState<N>& state) {
+void InMemoryTablebase<N>::calculateScores() {
 	std::deque<GridState<N>> stateQueue;
 	// Calculate all the trivial scores
 	for(const auto& p : m_nodes) {
