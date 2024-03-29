@@ -1,0 +1,6 @@
+[submodule "src/external/rapidjson"]
+	path = src/external/rapidjson
+	url = git@github.com:Tencent/rapidjson.git
+[submodule "src/external/unordered_dense"]
+	path = src/external/unordered_dense
+	url = git@github.com:martinus/unordered_dense.git

@@ -2,6 +2,10 @@
 This is my attempt at using a probability model to mind optimal moves in 2048.
 Check out my chicken scratch notes for more details.
 
+# External Code
+
+All code in the src/external directory is, as the name suggests, external and as such is governed by its own license. Because these are submodules, clone with `git clone git@github.com:orsonbraines/2048-probability-model.git --recursive`. If you have already cloned, you can load the submodules with `git submodule update --init --recursive`.
+
 # Building
 ## Prerequisites
 ### System/Platform
