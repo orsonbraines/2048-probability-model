@@ -60,7 +60,21 @@ int main() {
 		if(gameSize == 2 && uiState == UIState::GAME_ON) {
 			addch('\n');
 			std::ostringstream str;
-			str << "Win chance: " << tablebase.query(static_cast<Game<2>*>(game)->getState());
+			const GridState<2>& state = static_cast<Game<2>*>(game)->getState();
+			str << "Win chance: " << tablebase.query(state) << " Best Move: ";
+			std::pair<int, int> bestMove = tablebase.bestMove(state);
+			if(bestMove == std::make_pair(0, -1)) {
+				str << "LEFT";
+			} else if (bestMove == std::make_pair(0, 1)) {
+				str << "RIGHT";
+			} else if (bestMove == std::make_pair(-1, 0)) {
+				str << "UP";
+			} else if (bestMove == std::make_pair(1, 0)) {
+				str << "DOWN";
+			}
+			else {
+				str << "UNKNOWN";
+			}
 			addstr(str.str().c_str());
 		}
 		refresh();

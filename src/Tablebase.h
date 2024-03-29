@@ -2,6 +2,7 @@
 
 #include <algorithm>
 #include <array>
+#include <deque>
 #include <iostream>
 #include <utility>
 #include <vector>
@@ -21,6 +22,7 @@ public:
 	virtual void init(const GridState<N>& initState=GridState<N>(), int maxDepth = -1) = 0;
 	virtual float query(const GridState<N>& state) const = 0;
 	virtual void recursiveQuery(const GridState<N>& state, int currDepth, int maxDepth, QueryResultsType<N>& results) const = 0;
+	virtual std::pair<int, int> bestMove(const GridState<N>& state) const = 0;
 protected:
 	const float m_fourChance;
 };
@@ -32,21 +34,22 @@ public:
 	virtual void init(const GridState<N>& initState=GridState<N>(), int maxDepth = -1) override;
 	virtual float query(const GridState<N>& state) const override;
 	virtual void recursiveQuery(const GridState<N>& state, int currDepth, int maxDepth, QueryResultsType<N>& results) const override;
+	virtual std::pair<int, int> bestMove(const GridState<N>& state) const override;
 	void dump(std::ostream &o) const;
 private:
 	void generateEdges(const GridState<N>& state, bool intermediate, int maxDepth, int depth);
-	void calculateScores(const GridState<N>& state, bool intermediate);
+	void calculateScores(const GridState<N>& state);
 	ankerl::unordered_dense::map<GridState<N>, std::pair<float,float> /*final_score, intermediate_score*/> m_nodes;
 	ankerl::unordered_dense::map<GridState<N>, ankerl::unordered_dense::map<GridState<N>, float>> m_edges;
+	ankerl::unordered_dense::map<GridState<N>, std::vector<GridState<N>>> m_reverseEdges;
 	ankerl::unordered_dense::set<std::pair<GridState<N>, bool>> m_edgesGenerated;
-	ankerl::unordered_dense::set<std::pair<GridState<N>, bool>> m_calculatedScore;
 };
 
 template<uint N>
 void InMemoryTablebase<N>::init(const GridState<N>& initState, int maxDepth) {
 	m_nodes[initState] = std::make_pair(-1.0f, -1.0f);
 	generateEdges(initState, true, maxDepth, 0);
-	calculateScores(initState, true);
+	calculateScores(initState);
 	DEBUG_LOG("node count: " << m_nodes.size() << " edge count: " << m_edges.size() << std::endl);
 }
 
@@ -91,6 +94,7 @@ void InMemoryTablebase<N>::generateEdges(const GridState<N>& state, bool interme
 						m_nodes.insert(it, std::make_pair(child, std::make_pair(-1.0f, -1.0f)));
 					}
 					m_edges[state][child] = (i ? ITablebase<N>::m_fourChance : (1.0f - ITablebase<N>::m_fourChance)) / emptyTiles;
+					m_reverseEdges[child].push_back(state);
 					generateEdges(child, !intermediate, maxDepth, depth);
 				}
 			}
@@ -110,86 +114,105 @@ void InMemoryTablebase<N>::generateEdges(const GridState<N>& state, bool interme
 				m_nodes.insert(it, std::make_pair(childStates[i], std::make_pair(-1.0f, -1.0f)));
 			}
 			m_edges[state][childStates[i]] = -1;
+			m_reverseEdges[childStates[i]].push_back(state);
 			generateEdges(childStates[i], !intermediate, maxDepth, depth + 1);
 		}
 	}
 }
 
+// We need to be careful about howe we traverse the graph here.
+// A DFS will run into dependency loop problems, for example
+// -- is an intermediate child of both -- and --
+// -4                                  4-     -4
+// Which causes us to try to get the score a second time before we're finished the first time.
+// To avoid these problems we can do a reverse BFS
 template<uint N>
-void InMemoryTablebase<N>::calculateScores(const GridState<N>& state, bool intermediate) {
-	// Already Calculated
-	if(m_calculatedScore.count(std::make_pair(state, intermediate))) return;
-	m_calculatedScore.insert(std::make_pair(state, intermediate));
-	DEBUG_LOG("Begin ");
-	DEBUG_EXEC(state.printCompact(std::cerr));
-	DEBUG_LOG("-" << intermediate << std::endl);
+void InMemoryTablebase<N>::calculateScores(const GridState<N>& state) {
+	std::deque<GridState<N>> stateQueue;
+	// Calculate all the trivial scores
+	for(const auto& p : m_nodes) {
+		const GridState<N>& state = p.first;
+		bool foundScore = false;
+		//Meets the win condition of having the max tile
+		// In the future this should be updated to handle alternate win conditions
+		if(state.hasTile(N*N + 1)) {
+			m_nodes[state] = std::make_pair(1.0f, 1.0f);
+			foundScore = true;
+		}
+		// Lost State
+		else if(!state.hasMoves() && state != GridState<N>()) {
+			m_nodes[state] = std::make_pair(0.0f, 0.0f);
+			foundScore = true;
+		}
+		// Assume any non-final edge node has a score of 0.5
+		// In the future this will use an analysis algorithm to make a better guess
+		else if(!m_edges.count(state)) {
+			DEBUG_LOG("I thought me were generating to infinite depth....");
+			DEBUG_ASSERT(0);
+			m_nodes[state] = std::make_pair(0.5f, 0.5f);
+			foundScore = true;
+		}
 
-	// Meets the win condition of having the max tile
-	// In the future this should be updated to handle alternate win conditions
-	if(state.hasTile(N*N + 1)) {
-		m_nodes[state] = std::make_pair(1.0f, 1.0f);
-		DEBUG_LOG("End ");
-		DEBUG_EXEC(state.printCompact(std::cerr));
-		DEBUG_LOG("-" << intermediate << std::endl);
-		return;
-	}
-	// Lost State
-	if(!state.hasMoves() && state != GridState<N>()) {
-		DEBUG_LOG("End ");
-		DEBUG_EXEC(state.printCompact(std::cerr));
-		DEBUG_LOG("-" << intermediate << std::endl);
-		m_nodes[state] = std::make_pair(0.0f, 0.0f);
-		return;
-	}
-	// Assume any non-final edge node has a score of 0.5
-	// In the future this will use an analysis algorithm to make a better guess
-	if(!m_edges.count(state) || m_edges[state].empty()) {
-		DEBUG_LOG("BADBADBADBADBADBADBADBADBADBADBADBADBADBADB");
-		m_nodes[state] = std::make_pair(0.5f, 0.5f);
-		return;
-	}
-
-	if(intermediate) {
-		float score = 0;
-		for(const auto &p : m_edges[state]) {
-			auto& [childState, edgeWeight] = p;
-			calculateScores(childState, !intermediate);
-			if(edgeWeight != -1) {
-				DEBUG_LOG("real state contribution: ");
-				DEBUG_EXEC(state.printCompact(std::cerr));
-				DEBUG_LOG(" -> ");
-				DEBUG_EXEC(childState.printCompact(std::cerr));
-				DEBUG_LOG(": " << edgeWeight * m_nodes[childState].first << std::endl);
-				score += edgeWeight * m_nodes[childState].first;
+		if(foundScore) {
+			auto it = m_reverseEdges.find(state);
+			if(it != m_reverseEdges.end()) {
+				stateQueue.insert(stateQueue.end(), it->second.begin(), it->second.end());
 			}
 		}
-		DEBUG_LOG("calculated intermediate score: ");
-		DEBUG_EXEC(state.printCompact(std::cerr));
-		DEBUG_LOG(": " << score << std::endl);
-		m_nodes[state].second = score;
 	}
-	else {
-		float score = 0;
-		for(const auto &p : m_edges[state]) {
-			auto& [childState, edgeWeight] = p;
-			calculateScores(childState, !intermediate);
-			if(edgeWeight == -1) {
-				DEBUG_LOG("potential final score: ");
-				DEBUG_EXEC(state.printCompact(std::cerr));
-				DEBUG_LOG(" -> ");
-				DEBUG_EXEC(childState.printCompact(std::cerr));
-				DEBUG_LOG(": " << m_nodes[childState].second << std::endl);
-				score = std::max(score, m_nodes[childState].second);
-			} 
+
+	while (!stateQueue.empty()) {
+		GridState state = stateQueue.front();
+		stateQueue.pop_front();
+		auto [scoreFinal, scoreInter] = m_nodes[state];
+		if (scoreFinal != -1.0f && scoreInter != -1.0f) continue;
+
+		bool foundScore = false;
+		if (scoreFinal == -1.0f) {
+			// check if all the dependent intermediate scores have been calculated
+			bool readyToCalculate = true;
+			float score = 0.0f;
+			for (const auto& p : m_edges[state]) {
+				auto& [childState, edgeWeight] = p;
+				if(edgeWeight == -1) {
+					if (m_nodes[childState].second == -1) {
+						readyToCalculate = false;
+						break;
+					}
+					score = std::max(score, m_nodes[childState].second);
+				}
+			}
+			if (readyToCalculate) {
+				m_nodes[state].first = score;
+				foundScore = true;
+			}
 		}
-		DEBUG_LOG("calculated final score: ");
-		DEBUG_EXEC(state.printCompact(std::cerr));
-		DEBUG_LOG(": " << score << std::endl );
-		m_nodes[state].first = score;
+		if (scoreInter == -1.0f) {
+			// check if all the dependent intermediate scores have been calculated
+			bool readyToCalculate = true;
+			float score = 0.0f;
+			for (const auto& p : m_edges[state]) {
+				auto& [childState, edgeWeight] = p;
+				if (edgeWeight != -1) {
+					if (m_nodes[childState].first == -1) {
+						readyToCalculate = false;
+						break;
+					}
+					score += edgeWeight * m_nodes[childState].first;
+				}
+			}
+			if (readyToCalculate) {
+				m_nodes[state].second = score;
+				foundScore = true;
+			}
+		}
+		if (foundScore) {
+			auto it = m_reverseEdges.find(state);
+			if (it != m_reverseEdges.end()) {
+				stateQueue.insert(stateQueue.end(), it->second.begin(), it->second.end());
+			}
+		}
 	}
-	DEBUG_LOG("End ");
-	DEBUG_EXEC(state.printCompact(std::cerr));
-	DEBUG_LOG("-" << intermediate << std::endl);
 }
 
 template<uint N>
@@ -217,6 +240,41 @@ void InMemoryTablebase<N>::dump(std::ostream &o) const {
 			}
 		}
 	}
+}
+
+template<uint N>
+std::pair<int, int> InMemoryTablebase<N>::bestMove(const GridState<N>& state) const {
+	float bestScore = 0;
+	GridState<N> bestState;
+	auto it = m_edges.find(state);
+	if (it != m_edges.end()) {
+		const ankerl::unordered_dense::map<GridState<N>, float >& edges = it->second;
+		// find best intermediate child score
+		for (const auto& p : edges) {
+			if (p.second != -1) continue;
+			const GridState<N>& endState = p.first;
+			float score = m_nodes.at(endState).second;
+			if (score > bestScore) {
+				bestScore = score;
+				bestState = endState;
+			}
+		}
+	}
+	for (uint i = 0; i < 4; ++i) {
+		GridState<N> stateClone = state;
+		std::pair<int, int> swipeMove;
+		switch (i) {
+		case 0: swipeMove = std::make_pair(0, -1); break;
+		case 1: swipeMove = std::make_pair(0, 1); break;
+		case 2: swipeMove = std::make_pair(-1, 0); break;
+		case 3: swipeMove = std::make_pair(1, 0); break;
+		}
+		stateClone.swipe(swipeMove.first, swipeMove.second);
+		if (stateClone == bestState) {
+			return swipeMove;
+		}
+	}
+	return std::make_pair(-1, -1);
 }
 
 template<uint N>

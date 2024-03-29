@@ -66,6 +66,7 @@ if(CURSES_FOUND)
 		TUI.cc
 		TemplateAdaptor.cc
 	)
+	target_include_directories(tui PRIVATE ${PROJECT_SOURCE_DIR} ${CURSES_INCLUDE_DIRS})
 	if(${STATIC_LINK})
 		message(DEBUG "static linking curses")
 		if(${MSVC})
