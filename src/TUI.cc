@@ -19,7 +19,7 @@ enum class UIState {
 	RESETING
 };
 
-void writeGame(WINDOW* w, void *game, uint gameSize, uint tileRows, uint tileCols) {
+void writeGame(WINDOW* w, void *game, uint gameSize) {
 	std::ostringstream str;
 	printGame(str, gameSize, game);
 	waddstr(w, str.str().c_str());
@@ -52,7 +52,7 @@ int main() {
 			addstr(("Size (2,3,*4,5,6,7,8): " + resetBuffer).c_str());
 		if(uiState != UIState::RESETING) {
 			addch('\n');
-			writeGame(stdscr, game, gameSize, 1, 8);
+			writeGame(stdscr, game, gameSize);
 		}
 		refresh();
 		int key = getch();

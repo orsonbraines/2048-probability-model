@@ -85,7 +85,7 @@ void GridState<N, BITSET_T>::swap(uint row1, uint col1, uint row2, uint col2) {
 
 template<uint N, class BITSET_T>
 uint GridState<N, BITSET_T>::slideCol(uint col, bool dir) {
-	assert(col >= 0 && col < N);
+	assert(col < N);
 	uint sumOfNewTiles = 0;
 	bool lastSlideFused = false;
 	if(dir) {
@@ -149,7 +149,7 @@ uint GridState<N, BITSET_T>::slideCol(uint col, bool dir) {
 
 template<uint N, class BITSET_T>
 uint GridState<N, BITSET_T>::slideRow(uint row, bool dir) {
-	assert(row >= 0 && row < N);
+	assert(row < N);
 	uint sumOfNewTiles = 0;
 	bool lastSlideFused = false;
 	if(dir) {
@@ -282,7 +282,7 @@ std::ostream& operator<<(std::ostream& o, const GridState<N, BITSET_T>& grid) {
 template<uint N>
 class Game {
 public:
-	Game(double fourChance) : m_state(), m_fourChance{fourChance}, m_gameOver{false}, m_score{0} { 
+	Game(double fourChance) : m_state(), m_score{0}, m_fourChance{fourChance}, m_gameOver{false} { 
 		m_state.genRand(fourChance);
 	}
 	void reset() { 

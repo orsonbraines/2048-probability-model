@@ -3,6 +3,12 @@ project(2048-probability-model VERSION 0.0.0)
 set(CMAKE_CXX_STANDARD 20)
 set(CMAKE_CXX_STANDARD_REQUIRED True)
 
+if(MSVC)
+	message(DEBUG "Currently not using any MSVC compile options by default")
+else()
+add_compile_options(-g -Wall -Wextra)
+endif()
+
 option(STATIC_LINK "Static link libraries")
 if(STATIC_LINK)
 	set(BUILD_SHARED_LIBS OFF)
@@ -25,12 +31,6 @@ add_executable(model_test
 	ModelTest.cc
 	TemplateAdaptor.cc
 )
-target_include_directories(model_test PRIVATE ${PROJECT_SOURCE_DIR})
-if(MSVC)
-	message(DEBUG "Currently not using any MSVC compile options")
-else()
-	target_compile_options(model_test PRIVATE -g)
-endif()
 
 find_package(Curses)
 if(CURSES_FOUND)
@@ -43,12 +43,6 @@ if(CURSES_FOUND)
 		TUI.cc
 		TemplateAdaptor.cc
 	)
-	target_include_directories(tui PRIVATE ${PROJECT_SOURCE_DIR} ${CURSES_INCLUDE_DIRS})
-	if(${MSVC})
-		message(DEBUG "Currently not using any MSVC compile options")
-	else()
-		target_compile_options(model_test PRIVATE -g)
-	endif()
 	if(${STATIC_LINK})
 		message(DEBUG "static linking curses")
 		if(${MSVC})
