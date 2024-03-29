@@ -6,8 +6,23 @@ set(CMAKE_CXX_STANDARD_REQUIRED True)
 if(MSVC)
 	message(DEBUG "Currently not using any MSVC compile options by default")
 else()
-add_compile_options(-g -Wall -Wextra)
+	add_compile_options(-g -Wall -Wextra)
 endif()
+
+message(DEBUG "CMAKE_BUILD_TYPE: ${CMAKE_BUILD_TYPE}")
+if(CMAKE_BUILD_TYPE STREQUAL "Debug")
+	add_compile_definitions(_DEBUG=1)
+elseif(CMAKE_BUILD_TYPE STREQUAL "Release")
+	if(MSVC)
+		add_compile_options(/O2)
+	else()
+		add_compile_options(-O3)
+	endif()
+else()
+	message(WARNING "Unsupported build type '${CMAKE_BUILD_TYPE}', defaulting to Release")
+endif()
+
+include_directories(${PROJECT_SOURCE_DIR} "external/unordered_dense/include" "external/rapidjson/include")
 
 option(STATIC_LINK "Static link libraries")
 if(STATIC_LINK)
@@ -30,6 +45,13 @@ add_executable(model_test
 	TemplateAdaptor.h
 	ModelTest.cc
 	TemplateAdaptor.cc
+)
+
+add_executable(tablebase_test
+	Common.h
+	Model.h
+	Tablebase.h
+	TBTest.cc
 )
 
 find_package(Curses)

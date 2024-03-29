@@ -8,6 +8,7 @@
 #include <random>
 #include <string>
 
+#include "ankerl/unordered_dense.h"
 #include "Common.h"
 
 extern std::mt19937 s_random;
@@ -31,6 +32,7 @@ constexpr uint tileLog2(uint x) {
 template<uint N>
 class packed_bitset{
 public:
+	packed_bitset() { memset(m_data, 0, sizeof(m_data)); }
 	bool test(uint n) const {
 		assert(n < N);
 		return (m_data[n >> 3] & (1u << (n & 0x7))) != 0;
@@ -40,11 +42,14 @@ public:
 		if (v) m_data[n >> 3] |= (1u << (n & 0x7));
 		else m_data[n >> 3] &= ~(1u << (n & 0x7));
 	}
-	bool operator==(const packed_bitset<N> &that) {
+	bool operator==(const packed_bitset<N> &that) const {
 		return memcmp(this->m_data, that.m_data, (N+7)/8) == 0;
 	}
-	bool operator!=(const packed_bitset<N> &that) {
+	bool operator!=(const packed_bitset<N> &that) const {
 		return !(*this == that);
+	}
+	uint64 hash() const {
+		return ankerl::unordered_dense::ANKERL_UNORDERED_DENSE_NAMESPACE::detail::wyhash::hash(m_data, sizeof(m_data));
 	}
 private:
 	uint8_t m_data[(N+7)/8];
@@ -57,15 +62,25 @@ public:
 	static constexpr uint GRID_BITS = BITS_PER_TILE * N * N;
 	static constexpr std::string tileToStr(uint tile) { return (tile == 0) ? "-" : std::to_string(1u << tile); }
 
+	GridState() : m_grid() {}
+
+	const BITSET_T& getGrid() const { return m_grid; }
+
 	uint readTile(uint row, uint col) const;
 	void writeTile(uint row, uint col, uint tile);
+	bool isEmpty(uint row, uint col) const;
 	uint swipe(int dirRow, int dirCol);
-	void genRand(double fourRatio);
+	void genRand(float fourRatio);
+	bool hasMoves() const;
+	bool hasTile(uint tile) const;
+	uint numEmptyTiles() const;
 
-	bool operator==(const GridState<N, BITSET_T> &that) {
+	void printCompact(std::ostream &o) const;
+
+	bool operator==(const GridState<N, BITSET_T> &that) const  {
 		return this->m_grid == that.m_grid;
 	}
-	bool operator!=(const GridState<N, BITSET_T> &that) {
+	bool operator!=(const GridState<N, BITSET_T> &that) const  {
 		return this->m_grid != that.m_grid;
 	}
 private:
@@ -231,6 +246,11 @@ void GridState<N, BITSET_T>::writeTile(uint row, uint col, uint tile) {
 }
 
 template<uint N, class BITSET_T>
+bool GridState<N, BITSET_T>::isEmpty(uint row, uint col) const {
+	return readTile(row, col) == 0;
+}
+
+template<uint N, class BITSET_T>
 uint GridState<N, BITSET_T>::swipe(int dirRow, int dirCol) {
 	assert(((dirRow == -1 || dirRow == 1) && dirCol == 0) || ((dirCol == -1 || dirCol == 1) && dirRow == 0));
 	uint sumOfNewTiles = 0;
@@ -247,13 +267,12 @@ uint GridState<N, BITSET_T>::swipe(int dirRow, int dirCol) {
 	return sumOfNewTiles;
 }
 
-
 // Don't call if a full grid
 template<uint N, class BITSET_T>
-void GridState<N, BITSET_T>::genRand(double fourRatio) {
-	std::uniform_real_distribution<double> d_dist;
+void GridState<N, BITSET_T>::genRand(float fourRatio) {
+	std::uniform_real_distribution<float> d_dist;
 	std::uniform_int_distribution<uint> i_dist(0, N-1);
-	double roll = d_dist(s_random);
+	float roll = d_dist(s_random);
 	for(uint i = 0; i < 1000*N*N; ++i) {
 		uint row = i_dist(s_random);
 		uint col = i_dist(s_random);
@@ -264,6 +283,50 @@ void GridState<N, BITSET_T>::genRand(double fourRatio) {
 	}
 	// If we haven't found an empty tile in 1000N**2 attempts, the grid is probably full.
 	assert(0);
+}
+
+template<uint N, class BITSET_T>
+bool GridState<N, BITSET_T>::hasMoves() const {
+	GridState<N> clone1 = *this;
+	clone1.swipe(1, 0);
+	GridState<N> clone2 = *this;
+	clone2.swipe(-1, 0);
+	GridState<N> clone3 = *this;
+	clone3.swipe(0, 1);
+	GridState<N> clone4 = *this;
+	clone4.swipe(0,-1);
+	return !(clone1 == *this && clone2 == *this && clone3 == *this && clone4 == *this);
+}
+
+template<uint N, class BITSET_T>
+bool GridState<N, BITSET_T>::hasTile(uint tile) const {
+	for(uint r = 0; r < N; ++r) {
+		for(uint c = 0; c < N; c++) {
+			if(readTile(r, c) == tile) return true;
+		}
+	}
+	return false;
+}
+
+template<uint N, class BITSET_T>
+uint GridState<N, BITSET_T>::numEmptyTiles() const {
+	uint emptyTiles = 0;
+	for(uint r = 0; r < N; ++r) {
+		for(uint c = 0; c < N; c++) {
+			emptyTiles += isEmpty(r,c);
+		}
+	}
+	return emptyTiles;
+}
+
+template<uint N, class BITSET_T>
+void GridState<N, BITSET_T>::printCompact(std::ostream &o) const {
+	for(uint r = 0; r < N; ++r) {
+		for(uint c = 0; c < N; c++) {
+			o << readTile(r,c);
+			if(r != N - 1 || c != N - 1) o << ',';
+		}
+	}
 }
 
 template<uint N, class BITSET_T>
@@ -282,7 +345,7 @@ std::ostream& operator<<(std::ostream& o, const GridState<N, BITSET_T>& grid) {
 template<uint N>
 class Game {
 public:
-	Game(double fourChance) : m_state(), m_score{0}, m_fourChance{fourChance}, m_gameOver{false} { 
+	Game(float fourChance) : m_state(), m_score{0}, m_fourChance{fourChance}, m_gameOver{false} { 
 		m_state.genRand(fourChance);
 	}
 	void reset() { 
@@ -308,21 +371,13 @@ private:
 	void updateGameOver();
 	GridState<N> m_state;
 	uint m_score;
-	double m_fourChance;
+	float m_fourChance;
 	bool m_gameOver;
 };
 
 template<uint N>
 void Game<N>::updateGameOver() {
-	GridState<N> clone1 = m_state;
-	clone1.swipe(1, 0);
-	GridState<N> clone2 = m_state;
-	clone2.swipe(-1, 0);
-	GridState<N> clone3 = m_state;
-	clone3.swipe(0, 1);
-	GridState<N> clone4 = m_state;
-	clone4.swipe(0,-1);
-	m_gameOver = (clone1 == m_state && clone2 == m_state && clone3 == m_state && clone4 == m_state);
+	m_gameOver = !m_state.hasMoves();
 }
 
 template<uint N>
@@ -330,4 +385,20 @@ std::ostream& operator<<(std::ostream& o, const Game<N>& game) {
 	o << "Score: " << game.getScore() << std::endl;
 	o << game.getState();
 	return o;
+}
+
+namespace std {
+	template<uint N>
+	struct hash<packed_bitset<N>> {
+		std::size_t operator()(const packed_bitset<N>& n) {
+			return n.hash();
+		}
+	};
+	
+	template<uint N>
+	struct hash<GridState<N>> {
+		std::size_t operator()(const GridState<N>& n) {
+			return n.getGrid().hash();
+		}
+	};
 }
