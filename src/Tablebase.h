@@ -2,6 +2,7 @@
 
 #include <algorithm>
 #include <array>
+#include <cmath>
 #include <deque>
 #include <iostream>
 #include <utility>
@@ -285,4 +286,51 @@ inline void printQueryResults(std::ostream& o, const QueryResultsType<N>& result
 		state.printCompact(o);
 		o << ": " << score << std::endl;
 	}
+}
+
+template<uint N>
+class EmpiricalTablebase {
+public:
+	void addResult(const std::vector<GridState<N>>& states, bool win);
+	double query(const GridState<N>& state) const;
+	void compare(const ITablebase<N>& table, std::ostream& o, std::ostream& debug) const;
+private:
+	ankerl::unordered_dense::map<GridState<N>, std::pair<uint64, uint64>> m_resultMap;
+};
+
+template<uint N>
+void EmpiricalTablebase<N>::addResult(const std::vector<GridState<N>>& states, bool win) {
+	for (const auto& s : states) {
+		if (win) ++m_resultMap[s].first;
+		else ++m_resultMap[s].second;
+	}
+}
+
+template<uint N>
+double EmpiricalTablebase<N>::query(const GridState<N>& state) const {
+	auto it = m_resultMap.find(state);
+	if (it != m_resultMap.end()) {
+		double wins = it->second.first;
+		double total = wins + it->second.second;
+		return wins / total;
+	}
+	return -1.0;
+}
+
+template<uint N>
+void EmpiricalTablebase<N>::compare(const ITablebase<N>& table, std::ostream& o, std::ostream& debug) const {
+	double meanSquare = 0;
+	double largestDiff = 0;
+	for (const auto& p : m_resultMap) {
+		const GridState<N>& state = p.first;
+		double ours = query(state);
+		double theirs = table.query(state);
+		double diff2 = (ours - theirs) * (ours - theirs);
+		meanSquare += diff2;
+		largestDiff = std::max(largestDiff, diff2);
+		state.printCompact(debug);
+		debug << " ours: " << ours << " theirs: " << theirs << " diff2: " << diff2 << std::endl;
+	}
+	meanSquare /= m_resultMap.size();
+	o << "rms: " << std::sqrt(meanSquare) << " max(Diff^2): " << largestDiff << std::endl;
 }
