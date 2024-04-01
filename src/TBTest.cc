@@ -11,7 +11,7 @@ int main() {
 	EmpiricalTablebase<2> eTablebase;
 	tablebase.init(state);
 	
-	for (int i = 0; i < 100000000; ++i) {
+	for (int i = 0; i < 10000000; ++i) {
 		if (i % 1000000 == 0) {
 			std::cout << i << " iterations complete." << std::endl;
 		}

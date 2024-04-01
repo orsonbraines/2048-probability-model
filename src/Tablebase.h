@@ -11,6 +11,7 @@
 #include "ankerl/unordered_dense.h"
 #include "Common.h"
 #include "Model.h"
+#include "sqlite3.h"
 
 template<uint N>
 using QueryResultsType = std::vector<std::tuple<int, GridState<N>, float>>;
@@ -38,7 +39,7 @@ public:
 	virtual std::pair<int, int> bestMove(const GridState<N>& state) const override;
 	void dump(std::ostream &o) const;
 private:
-	void generateEdges(const GridState<N>& state, bool intermediate, int maxDepth, int depth);
+	void generateEdges(const GridState<N>& initState, int maxDepth);
 	void calculateScores();
 	ankerl::unordered_dense::map<GridState<N>, std::pair<float,float> /*final_score, intermediate_score*/> m_nodes;
 	ankerl::unordered_dense::map<GridState<N>, ankerl::unordered_dense::map<GridState<N>, float>> m_edges;
@@ -48,8 +49,8 @@ private:
 
 template<uint N>
 void InMemoryTablebase<N>::init(const GridState<N>& initState, int maxDepth) {
-	m_nodes[initState] = std::make_pair(-1.0f, -1.0f);
-	generateEdges(initState, true, maxDepth, 0);
+	//m_nodes[initState] = std::make_pair(-1.0f, -1.0f);
+	generateEdges(initState, maxDepth);
 	calculateScores();
 	DEBUG_LOG("node count: " << m_nodes.size() << " edge count: " << m_edges.size() << std::endl);
 }
@@ -77,11 +78,17 @@ void InMemoryTablebase<N>::recursiveQuery(const GridState<N>& state, int currDep
 }
 
 template<uint N>
-void InMemoryTablebase<N>::generateEdges(const GridState<N>& state, bool intermediate, int maxDepth, int depth) {
-	if((maxDepth >= 0 && depth > maxDepth) || m_edgesGenerated.count(std::make_pair(state, intermediate))) return;
-	m_edgesGenerated.insert(std::make_pair(state, intermediate));
-	// Node is being treated as an intermediate node: next action is random tile spawn
-	if(intermediate) {
+void InMemoryTablebase<N>::generateEdges(const GridState<N>& initState, int maxDepth) {
+	std::deque<std::pair<GridState<N>, int>> stateQueue;
+	stateQueue.push_back(std::make_pair(initState, 0));
+
+	while (!stateQueue.empty()) {
+		auto [state, depth] = stateQueue.front();
+		stateQueue.pop_front();
+
+		m_nodes[state] = std::make_pair(-1.0f, -1.0f);
+
+		// intermedate edges
 		uint emptyTiles = state.numEmptyTiles();
 		for(uint r = 0; r < N; ++r) {
 			for(uint c = 0; c < N; ++c) {
@@ -90,33 +97,32 @@ void InMemoryTablebase<N>::generateEdges(const GridState<N>& state, bool interme
 				for(uint i = 0; i < 2; ++i) {
 					GridState<N> child = state;
 					child.writeTile(r, c, i + 1);
-					auto it = m_nodes.find(child);
-					if(it == m_nodes.end()) {
-						m_nodes.insert(it, std::make_pair(child, std::make_pair(-1.0f, -1.0f)));
-					}
 					m_edges[state][child] = (i ? ITablebase<N>::m_fourChance : (1.0f - ITablebase<N>::m_fourChance)) / emptyTiles;
 					m_reverseEdges[child].push_back(state);
-					generateEdges(child, !intermediate, maxDepth, depth);
+					if ((maxDepth < 0 || depth < maxDepth) && m_nodes.count(child) == 0) {
+						stateQueue.emplace_back(child, depth + 1);
+					}
 				}
 			}
 		}
-	}
-	// Node is being treated as an real node: next action is user swipe 
-	else {
-		std::array<GridState<N>, 4> childStates = {state, state, state, state};
-		childStates[0].swipe(0, -1);
-		childStates[1].swipe(0, 1);
-		childStates[2].swipe(-1, 0);
-		childStates[3].swipe(1, 0);
+
+		// non-intermediate edges
 		for(uint i=0; i < 4; ++i) {
-			if(childStates[i] == state) continue;
-			auto it = m_nodes.find(childStates[i]);
-			if(it == m_nodes.end()) {
-				m_nodes.insert(it, std::make_pair(childStates[i], std::make_pair(-1.0f, -1.0f)));
+			GridState<N> child = state;
+			switch (i) {
+			case 0: child.swipe(0, -1); break;
+			case 1: child.swipe(0, 1); break;
+			case 2: child.swipe(-1, 0); break;
+			case 3: child.swipe(1, 0); break;
 			}
-			m_edges[state][childStates[i]] = -1;
-			m_reverseEdges[childStates[i]].push_back(state);
-			generateEdges(childStates[i], !intermediate, maxDepth, depth + 1);
+
+			if (child == state) continue;
+
+			m_edges[state][child] = -1;
+			m_reverseEdges[child].push_back(state);
+			if ((maxDepth < 0 || depth < maxDepth) && m_nodes.count(child) == 0) {
+				stateQueue.emplace_back(child, depth + 1);
+			}
 		}
 	}
 }

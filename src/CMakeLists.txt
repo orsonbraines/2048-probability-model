@@ -39,6 +39,9 @@ if(CODEGEN_STATUS AND NOT CODEGEN_STATUS EQUAL 0)
 	message(FATAL_ERROR "TemplateAdaptorGenerator.py FAILED: ${CODEGEN_STATUS}")
 endif()
 
+find_package(SQLite3 REQUIRED)
+include_directories(${SQLite3_INCLUDE_DIRS})
+
 add_executable(model_test
 	Common.h
 	Model.h
@@ -53,6 +56,7 @@ add_executable(tablebase_test
 	Tablebase.h
 	TBTest.cc
 )
+target_link_libraries(tablebase_test ${SQLite3_LIBRARIES})
 
 find_package(Curses)
 if(CURSES_FOUND)
