@@ -32,32 +32,32 @@ Used for the Text User Interface (TUI).
 
 1. Install the latest version of Visual Studio (Community Edition is fine) from https://visualstudio.microsoft.com/downloads/
 2. Install the source code for PDCurses from https://github.com/wmcbrine/PDCurses/releases
-3. Follow the instructions in PDCurses-3.9/wincon/README.md to build pdcurses.lib
+3. Follow the instructions in PDCurses-3.9/wincon/README.md to build pdcurses.lib. To build a 64-bit library, make sure to run in the 64-bit developer command prompt.
 4. Open the 2048-probability-model/src directory in Visual Studio as a CMake project
-5. Create an x86 configuration for the project. x64 won't work because it can't link with the 32-bit PDCurses library. In the CMake configuration, define `CURSES_INCLUDE_PATH` and `CURSES_LIBRARY` so that CMake knows where to find PDCurses.
+5. Make sure to match the configuration to the environment that you build PDCurses for (x64 vs x86). In the CMake configuration, define `CURSES_INCLUDE_PATH` and `CURSES_LIBRARY` so that CMake knows where to find PDCurses.
 ```
 {
-	"name": "x86-Debug",
-	"generator": "Ninja",
-	"configurationType": "Debug",
-	"buildRoot": "${projectDir}\\out\\build\\${name}",
-	"installRoot": "${projectDir}\\out\\install\\${name}",
-	"cmakeCommandArgs": "",
-	"buildCommandArgs": "",
-	"ctestCommandArgs": "",
-	"inheritEnvironments": [ "msvc_x86" ],
-	"variables": [
-		{
-			"name": "CURSES_INCLUDE_PATH",
-			"value": "C:/path/to/PDCurses-3.9",
-			"type": "PATH"
-		},
-		{
-			"name": "CURSES_LIBRARY",
-			"value": "C:/path/to/PDCurses-3.9/wincon/pdcurses.lib",
-			"type": "PATH"
-		}
-	]
+    "name": "x64-Debug",
+    "generator": "Ninja",
+    "configurationType": "Debug",
+    "inheritEnvironments": [ "msvc_x64_x64" ],
+    "buildRoot": "${projectDir}\\out\\build\\${name}",
+    "installRoot": "${projectDir}\\out\\install\\${name}",
+    "cmakeCommandArgs": "",
+    "buildCommandArgs": "",
+    "ctestCommandArgs": "",
+    "variables": [
+    {
+        "name": "CURSES_INCLUDE_PATH",
+        "value": "C:/path/to/PDCurses-3.9",
+        "type": "PATH"
+    },
+    {
+        "name": "CURSES_LIBRARY",
+        "value": "C:/path/to/PDCurses-3.9/wincon/pdcurses.lib",
+        "type": "PATH"
+    }
+    ]
 }
 ```
 6. Build All
