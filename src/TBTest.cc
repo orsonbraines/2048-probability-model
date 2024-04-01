@@ -6,10 +6,9 @@
 std::mt19937 s_random((std::random_device())());
 
 int main() {
-	GridState<2> state;
 	InMemoryTablebase<2> tablebase(0.2f);
 	EmpiricalTablebase<2> eTablebase;
-	tablebase.init(state);
+	tablebase.init();
 	
 	for (int i = 0; i < 10000000; ++i) {
 		if (i % 1000000 == 0) {

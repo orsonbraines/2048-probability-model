@@ -4,15 +4,16 @@ CREATE TABLE node (
     noninter_score REAL NOT NULL) STRICT;
 
 CREATE TABLE edge (
-    starting_state BLOB NOT NULL,
-    ending_state BLOB NOT NULL,
+    start_state BLOB NOT NULL,
+    end_state BLOB NOT NULL,
     weight REAL NOT NULL,
     PRIMARY KEY (starting_state, ending_state)
 ) STRICT;
 
 CREATE TABLE edge_queue (
     id INTEGER PRIMARY KEY AUTOINCREMENT,
-    node BLOB NOT NULL
+    node BLOB NOT NULL,
+    node_depth INTEGER NOT NULL; 
 ) STRICT;
 
 CREATE TABLE score_queue (
