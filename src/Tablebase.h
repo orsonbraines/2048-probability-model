@@ -292,6 +292,155 @@ std::pair<int, int> InMemoryTablebase<N>::bestMove(const GridState<N>& state) co
 }
 
 template<uint N>
+class SqliteTablebase : public ITablebase<N> {
+public:
+	SqliteTablebase(float fourChance, const std::string& dbName = "", int cacheSize = -8388608 /*8GiB*/);
+	virtual ~SqliteTablebase();
+	virtual void init(uint64 maxActions = UINT64_MAX, int maxDepth = -1) {}
+	virtual float query(const GridState<N>& state) const { return 0; }
+	virtual void recursiveQuery(const GridState<N>& state, int currDepth, int maxDepth, QueryResultsType<N>& results) const {}
+	virtual std::pair<int, int> bestMove(const GridState<N>& state) const { return { -1,-1 }; }
+private:
+	sqlite3* m_db;
+
+	sqlite3_stmt* m_psInsertNode;
+	sqlite3_stmt* m_psUpdateNodeInter;
+	sqlite3_stmt* m_psUpdateNodeNoninter;
+	sqlite3_stmt* m_psQueryNodeScores;
+	sqlite3_stmt* m_psQueryNodeExists;
+
+	sqlite3_stmt* m_psInsertEdge;
+	sqlite3_stmt* m_psQueryEdges;
+	sqlite3_stmt* m_psQueryReverseEdges;
+
+	sqlite3_stmt* m_psEdgeQueueGetFront;
+	sqlite3_stmt* m_psEdgeQueuePopFront;
+	sqlite3_stmt* m_psEdgeQueuePushBack;
+
+	sqlite3_stmt* m_psScoreQueueGetFront;
+	sqlite3_stmt* m_psScoreQueuePopFront;
+	sqlite3_stmt* m_psScoreQueuePushBack;
+
+	static constexpr char PRAGMA_SYNCHRONOUS_SQL[] = "PRAGMA synchronous = OFF;";
+	static constexpr char PRAGMA_JOURNAL_SQL[] = "PRAGMA journal_mode = MEMORY;";
+
+	static constexpr char CREATE_TABLE_NODE_SQL[] = "CREATE TABLE node (\n"
+		"grid_state BLOB PRIMARY KEY,\n"
+		"inter_score REAL NOT NULL,\n"
+		"noninter_score REAL NOT NULL) STRICT;";
+
+	static constexpr char CREATE_TABLE_EDGE_SQL[] = "CREATE TABLE edge (\n"
+		"start_state BLOB NOT NULL,\n"
+		"end_state BLOB NOT NULL,\n"
+		"weight REAL NOT NULL,\n"
+		"PRIMARY KEY(start_state, end_state)\n"
+		") STRICT;";
+
+	static constexpr char CREATE_TABLE_EDGE_QUEUE_SQL[] = "CREATE TABLE edge_queue(\n"
+		"id INTEGER PRIMARY KEY AUTOINCREMENT,\n"
+		"node BLOB NOT NULL,\n"
+		"node_depth INTEGER NOT NULL\n"
+		") STRICT;";
+
+	static constexpr char CREATE_TABLE_SCORE_QUEUE_SQL[] = "CREATE TABLE score_queue (\n"
+		"id INTEGER PRIMARY KEY AUTOINCREMENT,\n"
+		"node BLOB NOT NULL\n"
+		") STRICT;";
+
+	static constexpr char CREATE_TABLE_CONFIG_SQL[] = "CREATE TABLE config(\n"
+		"prop_name TEXT PRIMARY KEY,\n"
+		"prop_value TEXT\n"
+		") STRICT;";
+
+	static constexpr char CREATE_INDEX_REVERSE_EDGE_SQL[] = "CREATE INDEX reverse_edge ON edge(end_state);";
+
+	static constexpr char INSERT_NODE_SQL[] = "INSERT INTO node(grid_state, inter_score, noninter_score) VALUES (?, -1.0, -1.0);";
+	static constexpr char UPDATE_NODE_INTER_SQL[] = "UPDATE node SET inter_score = ? WHERE grid_state = ?;";
+	static constexpr char UPDATE_NODE_NONINTER_SQL[] = "UPDATE node SET noninter_score = ? WHERE grid_state = ?;";
+	static constexpr char QUERY_NODE_SCORES_SQL[] = "SELECT inter_score, noninter_score FROM node WHERE grid_state = ?;";
+	static constexpr char QUERY_NODE_EXISTS_SQL[] = "SELECT count(*) FROM node WHERE grid_state = ?;";
+
+	static constexpr char INSERT_EDGE_SQL[] = "INSERT INTO edge(start_state, end_state, weight) VALUES(?, ?, ?);";
+	static constexpr char QUERY_EDGES_SQL[] = "SELECT end_state FROM edge WHERE start_state = ?;";
+	static constexpr char QUERY_REVERSE_EDGES_SQL[] = "SELECT start_state FROM edge WHERE end_state = ?;";
+
+	static constexpr char EDGE_QUEUE_GET_FRONT_SQL[] = "SELECT node, node_depth from edge_queue WHERE id = (SELECT min(id) FROM edge_queue);";
+	static constexpr char EDGE_QUEUE_POP_FRONT_SQL[] = "DELETE from edge_queue WHERE id = (SELECT min(id) FROM edge_queue);";
+	static constexpr char EDGE_QUEUE_PUSH_BACK_SQL[] = "INSERT INTO edge_queue(node, node_depth) VALUES(?,?);";
+
+	static constexpr char SCORE_QUEUE_GET_FRONT_SQL[] = "SELECT node from score_queue WHERE id = (SELECT min(id) FROM score_queue);";
+	static constexpr char SCORE_QUEUE_POP_FRONT_SQL[] = "DELETE from score_queue WHERE id = (SELECT min(id) FROM score_queue);";
+	static constexpr char SCORE_QUEUE_PUSH_BACK_SQL[] = "INSERT INTO score_queue(node) VALUES(?);";
+	static constexpr char COPY_NODES_TO_SCORE_QUEUE_SQL[] = "INSERT INTO score_queue(node) SELECT grid_state FROM node;";
+};
+
+template<uint N>
+SqliteTablebase<N>::SqliteTablebase(float fourChance, const std::string& dbName, int cacheSize) : ITablebase<N>(fourChance) {
+	if (dbName.empty()) {
+		std::ostringstream dbNameStr;
+		dbNameStr << "2048_tb_" << N << '-' << fourChance << ".sqlite";
+		CHECK_RETURN_CODE(sqlite3_open(dbNameStr.str().c_str(), &m_db), SQLITE_OK);
+	}
+	else {
+		CHECK_RETURN_CODE(sqlite3_open(dbName.c_str(), &m_db), SQLITE_OK);
+	}
+
+	CHECK_RETURN_CODE(sqlite3_exec(m_db, PRAGMA_SYNCHRONOUS_SQL, nullptr, nullptr, nullptr), SQLITE_OK);
+	CHECK_RETURN_CODE(sqlite3_exec(m_db, PRAGMA_JOURNAL_SQL, nullptr, nullptr, nullptr), SQLITE_OK);
+	std::ostringstream cacheSizeStr;
+	cacheSizeStr << "PRAGMA cache_size = " << cacheSize << ";";
+	CHECK_RETURN_CODE(sqlite3_exec(m_db, cacheSizeStr.str().c_str(), nullptr, nullptr, nullptr), SQLITE_OK);
+
+	CHECK_RETURN_CODE(sqlite3_exec(m_db, CREATE_TABLE_NODE_SQL, nullptr, nullptr, nullptr), SQLITE_OK);
+	CHECK_RETURN_CODE(sqlite3_exec(m_db, CREATE_TABLE_EDGE_SQL, nullptr, nullptr, nullptr), SQLITE_OK);
+	CHECK_RETURN_CODE(sqlite3_exec(m_db, CREATE_TABLE_EDGE_QUEUE_SQL, nullptr, nullptr, nullptr), SQLITE_OK);
+	CHECK_RETURN_CODE(sqlite3_exec(m_db, CREATE_TABLE_SCORE_QUEUE_SQL, nullptr, nullptr, nullptr), SQLITE_OK);
+	CHECK_RETURN_CODE(sqlite3_exec(m_db, CREATE_TABLE_CONFIG_SQL, nullptr, nullptr, nullptr), SQLITE_OK);
+	CHECK_RETURN_CODE(sqlite3_exec(m_db, CREATE_INDEX_REVERSE_EDGE_SQL, nullptr, nullptr, nullptr), SQLITE_OK);
+
+	CHECK_RETURN_CODE(sqlite3_prepare_v3(m_db, INSERT_NODE_SQL, -1, SQLITE_PREPARE_PERSISTENT, &m_psInsertNode, nullptr), SQLITE_OK);
+	CHECK_RETURN_CODE(sqlite3_prepare_v3(m_db, UPDATE_NODE_INTER_SQL, -1, SQLITE_PREPARE_PERSISTENT, &m_psUpdateNodeInter, nullptr), SQLITE_OK);
+	CHECK_RETURN_CODE(sqlite3_prepare_v3(m_db, UPDATE_NODE_NONINTER_SQL, -1, SQLITE_PREPARE_PERSISTENT, &m_psUpdateNodeNoninter, nullptr), SQLITE_OK);
+	CHECK_RETURN_CODE(sqlite3_prepare_v3(m_db, QUERY_NODE_SCORES_SQL, -1, SQLITE_PREPARE_PERSISTENT, &m_psQueryNodeScores, nullptr), SQLITE_OK);
+	CHECK_RETURN_CODE(sqlite3_prepare_v3(m_db, QUERY_NODE_EXISTS_SQL, -1, SQLITE_PREPARE_PERSISTENT, &m_psQueryNodeExists, nullptr), SQLITE_OK);
+
+	CHECK_RETURN_CODE(sqlite3_prepare_v3(m_db, INSERT_EDGE_SQL, -1, SQLITE_PREPARE_PERSISTENT, &m_psInsertEdge, nullptr), SQLITE_OK);
+	CHECK_RETURN_CODE(sqlite3_prepare_v3(m_db, QUERY_EDGES_SQL, -1, SQLITE_PREPARE_PERSISTENT, &m_psQueryEdges, nullptr), SQLITE_OK);
+	CHECK_RETURN_CODE(sqlite3_prepare_v3(m_db, QUERY_REVERSE_EDGES_SQL, -1, SQLITE_PREPARE_PERSISTENT, &m_psQueryReverseEdges, nullptr), SQLITE_OK);
+
+	CHECK_RETURN_CODE(sqlite3_prepare_v3(m_db, EDGE_QUEUE_GET_FRONT_SQL, -1, SQLITE_PREPARE_PERSISTENT, &m_psEdgeQueueGetFront, nullptr), SQLITE_OK);
+	CHECK_RETURN_CODE(sqlite3_prepare_v3(m_db, EDGE_QUEUE_POP_FRONT_SQL, -1, SQLITE_PREPARE_PERSISTENT, &m_psEdgeQueuePopFront, nullptr), SQLITE_OK);
+	CHECK_RETURN_CODE(sqlite3_prepare_v3(m_db, EDGE_QUEUE_PUSH_BACK_SQL, -1, SQLITE_PREPARE_PERSISTENT, &m_psEdgeQueuePushBack, nullptr), SQLITE_OK);
+
+	CHECK_RETURN_CODE(sqlite3_prepare_v3(m_db, SCORE_QUEUE_GET_FRONT_SQL, -1, SQLITE_PREPARE_PERSISTENT, &m_psScoreQueueGetFront, nullptr), SQLITE_OK);
+	CHECK_RETURN_CODE(sqlite3_prepare_v3(m_db, SCORE_QUEUE_POP_FRONT_SQL, -1, SQLITE_PREPARE_PERSISTENT, &m_psScoreQueuePopFront, nullptr), SQLITE_OK);
+	CHECK_RETURN_CODE(sqlite3_prepare_v3(m_db, SCORE_QUEUE_PUSH_BACK_SQL, -1, SQLITE_PREPARE_PERSISTENT, &m_psScoreQueuePushBack, nullptr), SQLITE_OK);
+}
+
+template<uint N>
+SqliteTablebase<N>::~SqliteTablebase() {
+	sqlite3_finalize(m_psInsertNode);
+	sqlite3_finalize(m_psUpdateNodeInter);
+	sqlite3_finalize(m_psUpdateNodeNoninter);
+	sqlite3_finalize(m_psQueryNodeScores);
+	sqlite3_finalize(m_psQueryNodeExists);
+
+	sqlite3_finalize(m_psInsertEdge);
+	sqlite3_finalize(m_psQueryEdges);
+	sqlite3_finalize(m_psQueryReverseEdges);
+
+	sqlite3_finalize(m_psEdgeQueueGetFront);
+	sqlite3_finalize(m_psEdgeQueuePopFront);
+	sqlite3_finalize(m_psEdgeQueuePushBack);
+
+	sqlite3_finalize(m_psScoreQueueGetFront);
+	sqlite3_finalize(m_psScoreQueuePopFront);
+	sqlite3_finalize(m_psScoreQueuePushBack);
+
+	sqlite3_close(m_db);
+}
+
+template<uint N>
 inline void printQueryResults(std::ostream& o, const QueryResultsType<N>& results) {
 	for(const auto &t: results) {
 		auto &[depth, state, score] = t;

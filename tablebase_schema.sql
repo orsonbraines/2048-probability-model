@@ -7,13 +7,13 @@ CREATE TABLE edge (
     start_state BLOB NOT NULL,
     end_state BLOB NOT NULL,
     weight REAL NOT NULL,
-    PRIMARY KEY (starting_state, ending_state)
+    PRIMARY KEY (start_state, end_state)
 ) STRICT;
 
 CREATE TABLE edge_queue (
     id INTEGER PRIMARY KEY AUTOINCREMENT,
     node BLOB NOT NULL,
-    node_depth INTEGER NOT NULL; 
+    node_depth INTEGER NOT NULL
 ) STRICT;
 
 CREATE TABLE score_queue (
@@ -26,4 +26,4 @@ CREATE TABLE config (
     prop_value TEXT
 ) STRICT;
 
-CREATE INDEX reverse_edge ON edge(ending_state);
+CREATE INDEX reverse_edge ON edge(end_state);
