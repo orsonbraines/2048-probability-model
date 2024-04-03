@@ -8,16 +8,16 @@ std::mt19937 s_random((std::random_device())());
 int main() {
 	InMemoryTablebase<2> tablebase(0.2f);
 	EmpiricalTablebase<2> eTablebase;
-	try {
-		SqliteTablebase<2> sTablebase(0.2f);
-	}
-	catch (const std::runtime_error& e) {
-		std::cerr << e.what() << std::endl;
-		return 1;
-	}
+	//try {
+	//	SqliteTablebase<2> sTablebase(0.2f);
+	//}
+	//catch (const std::runtime_error& e) {
+	//	std::cerr << e.what() << std::endl;
+	//	return 1;
+	//}
 	tablebase.init();
 	
-	for (int i = 0; i < 10000000; ++i) {
+	for (int i = 0; i < 1000000; ++i) {
 		if (i % 1000000 == 0) {
 			std::cout << i << " iterations complete." << std::endl;
 		}

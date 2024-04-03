@@ -21,14 +21,171 @@ class ITablebase{
 public:
 	ITablebase(float fourChance) : m_fourChance(fourChance), m_actionCount{0} {}
 	virtual ~ITablebase() {}
-	virtual void init(uint64 maxActions = UINT64_MAX, int maxDepth = -1) = 0;
+	virtual void init(uint64 maxActions = UINT64_MAX, int maxDepth = -1);
 	virtual float query(const GridState<N>& state) const = 0;
 	virtual void recursiveQuery(const GridState<N>& state, int currDepth, int maxDepth, QueryResultsType<N>& results) const = 0;
 	virtual std::pair<int, int> bestMove(const GridState<N>& state) const = 0;
 protected:
+	virtual void generateEdges(uint64 maxActions, int maxDepth);
+	virtual void calculateScores(uint64 maxActions);
+	virtual void setNode(const GridState<N>& node, float noninterScore = -1, float interScore = -1) = 0;
+	virtual bool hasNode(const GridState<N>& node) = 0;
+	virtual std::pair<float, float> getNodeScores(const GridState<N>& node) = 0;
+	virtual void pushToEdgeQueue(const GridState<N>& node, int depth) = 0;
+	virtual std::pair<GridState<N>, int> popFromEdgeQueue() = 0;
+	virtual bool edgeQueueEmpty() = 0;
+	virtual void addEdge(const GridState<N>& parent, const GridState<N>& child, float weight) = 0;
+	virtual bool hasEdge(const GridState<N>& node) = 0;
+	virtual std::vector<GridState<N>> getEdges(const GridState<N>& node) = 0;
+	virtual float getEdgeWeight(const GridState<N>& parent, const GridState<N>& child) = 0;
+	virtual std::vector<GridState<N>> getParents(const GridState<N>& child) = 0;
+	virtual void copyNodesToScoreQueue() = 0;
+	virtual void pushToScoreQueue(const GridState<N>& node) = 0;
+	virtual GridState<N> popFromScoreQueue() = 0;
+	virtual bool scoreQueueEmpty() = 0;
+	virtual void addInterScore(const GridState<N>& node, float score) = 0;
+	virtual void addNonInterScore(const GridState<N>& node, float score) = 0;
 	const float m_fourChance;
 	uint64 m_actionCount;
 };
+
+template<uint N>
+void ITablebase<N>::init(uint64 maxActions, int maxDepth) {
+	generateEdges(maxActions, maxDepth);
+	calculateScores(maxActions);
+}
+
+template<uint N>
+void ITablebase<N>::generateEdges(uint64 maxActions, int maxDepth) {
+	setNode(GridState<N>());
+	pushToEdgeQueue(GridState<N>(), 0);
+
+	for (; m_actionCount < maxActions && !edgeQueueEmpty(); ++m_actionCount) {
+		auto [state, depth] = popFromEdgeQueue();
+
+		// intermedate edges
+		uint emptyTiles = state.numEmptyTiles();
+		for (uint r = 0; r < N; ++r) {
+			for (uint c = 0; c < N; ++c) {
+				if (!state.isEmpty(r, c)) continue;
+
+				for (uint i = 0; i < 2; ++i) {
+					GridState<N> child = state;
+					child.writeTile(r, c, i + 1);
+					addEdge(state, child, (i ? m_fourChance : (1.0f - m_fourChance)) / emptyTiles);
+					if ((maxDepth < 0 || depth < maxDepth) && !hasNode(child)) {
+						setNode(child);
+						pushToEdgeQueue(child, depth + 1);
+					}
+				}
+			}
+		}
+
+		// non-intermediate edges
+		for (uint i = 0; i < 4; ++i) {
+			GridState<N> child = state;
+			switch (i) {
+			case 0: child.swipe(0, -1); break;
+			case 1: child.swipe(0, 1); break;
+			case 2: child.swipe(-1, 0); break;
+			case 3: child.swipe(1, 0); break;
+			}
+
+			if (child == state) continue;
+
+			addEdge(state, child, -1);
+			if ((maxDepth < 0 || depth < maxDepth) && !hasNode(child)) {
+				setNode(child);
+				pushToEdgeQueue(child, depth + 1);
+			}
+		}
+	}
+
+	DEBUG_LOG("generateEdges exiting after " << m_actionCount << " actions" << std::endl);
+	m_actionCount = 0;
+}
+
+template<uint N>
+void ITablebase<N>::calculateScores(uint64 maxActions) {
+	copyNodesToScoreQueue();
+
+	for (; m_actionCount < maxActions && !scoreQueueEmpty(); ++m_actionCount) {
+		GridState state = popFromScoreQueue();
+		auto [scoreFinal, scoreInter] = getNodeScores(state);
+		if (scoreFinal != -1.0f && scoreInter != -1.0f) continue;
+
+		bool foundScore = false;
+		// Meets the win condition of having the max tile
+		// In the future this should be updated to handle alternate win conditions
+		if (state.hasTile(N * N + 1)) {
+			setNode(state, 1.0f, 1.0f);
+			foundScore = true;
+		}
+		// Lost State
+		else if (!state.hasMoves() && state != GridState<N>()) {
+			setNode(state, 0.0f, 0.0f);
+			foundScore = true;
+		}
+		// Assume any non-final edge node has a score of 0.5
+		// In the future this will use an analysis algorithm to make a better guess
+		else if (!hasEdge(state)) {
+			DEBUG_LOG("I thought me were generating to infinite depth....");
+			DEBUG_ASSERT(0);
+			setNode(state, 0.5f, 0.5f);
+			foundScore = true;
+		}
+		else {
+			if (scoreFinal == -1.0f) {
+				// check if all the dependent intermediate scores have been calculated
+				bool readyToCalculate = true;
+				float score = 0.0f;
+				for (const GridState<N>& childState : getEdges(state)) {
+					float edgeWeight = getEdgeWeight(state, childState);
+					if (edgeWeight == -1) {
+						if (getNodeScores(childState).second == -1) {
+							readyToCalculate = false;
+							break;
+						}
+						score = std::max(score, getNodeScores(childState).second);
+					}
+				}
+				if (readyToCalculate) {
+					addNonInterScore(state, score);
+					foundScore = true;
+				}
+			}
+			if (scoreInter == -1.0f) {
+				// check if all the dependent intermediate scores have been calculated
+				bool readyToCalculate = true;
+				float score = 0.0f;
+				for (const GridState<N>& childState : getEdges(state)) {
+					float edgeWeight = getEdgeWeight(state, childState);
+					if (edgeWeight != -1) {
+						if (getNodeScores(childState).first == -1) {
+							readyToCalculate = false;
+							break;
+						}
+						score += edgeWeight * getNodeScores(childState).first;
+					}
+				}
+				if (readyToCalculate) {
+					addInterScore(state, score);
+					foundScore = true;
+				}
+			}
+		}
+		if (foundScore) {
+			for (const GridState<N>& prevState : getParents(state)) {
+				auto [prevScoreFinal, prevScoreInter] = getNodeScores(prevState);
+				if (prevScoreFinal == -1.0f || prevScoreInter == -1.0f) {
+					pushToScoreQueue(prevState);
+				}
+			}
+		}
+	}
+	DEBUG_LOG("calculateScores exiting after " << m_actionCount << " actions" << std::endl);
+	m_actionCount = 0;
+}
 
 template<uint N>
 class InMemoryTablebase : public ITablebase<N> {
@@ -39,19 +196,36 @@ public:
 	virtual void recursiveQuery(const GridState<N>& state, int currDepth, int maxDepth, QueryResultsType<N>& results) const override;
 	virtual std::pair<int, int> bestMove(const GridState<N>& state) const override;
 	void dump(std::ostream &o) const;
+protected:
+	virtual void setNode(const GridState<N>& node, float noninterScore = -1, float interScore = -1) override;
+	virtual bool hasNode(const GridState<N>& node) override;
+	virtual std::pair<float, float> getNodeScores(const GridState<N>& node) override;
+	virtual void pushToEdgeQueue(const GridState<N>& node, int depth) override;
+	virtual std::pair<GridState<N>, int> popFromEdgeQueue() override;
+	virtual bool edgeQueueEmpty() override;
+	virtual void addEdge(const GridState<N>& parent, const GridState<N>& child, float weight) override;
+	virtual bool hasEdge(const GridState<N>& node) override;
+	virtual std::vector<GridState<N>> getEdges(const GridState<N>& node) override;
+	virtual float getEdgeWeight(const GridState<N>& parent, const GridState<N>& child) override;
+	virtual std::vector<GridState<N>> getParents(const GridState<N>& child) override;
+	virtual void copyNodesToScoreQueue() override;
+	virtual void pushToScoreQueue(const GridState<N>& node) override;
+	virtual GridState<N> popFromScoreQueue() override;
+	virtual bool scoreQueueEmpty() override;
+	virtual void addInterScore(const GridState<N>&node, float score) override;
+	virtual void addNonInterScore(const GridState<N>& node, float score) override;
 private:
-	void generateEdges(uint64 maxActions, int maxDepth);
-	void calculateScores(uint64 maxActions);
 	ankerl::unordered_dense::map<GridState<N>, std::pair<float,float> /*final_score, intermediate_score*/> m_nodes;
 	ankerl::unordered_dense::map<GridState<N>, ankerl::unordered_dense::map<GridState<N>, float>> m_edges;
 	ankerl::unordered_dense::map<GridState<N>, std::vector<GridState<N>>> m_reverseEdges;
 	ankerl::unordered_dense::set<std::pair<GridState<N>, bool>> m_edgesGenerated;
+	std::deque<std::pair<GridState<N>, int>> m_edgeQueue;
+	std::deque<GridState<N>> m_scoreQueue;
 };
 
 template<uint N>
 void InMemoryTablebase<N>::init(uint64 maxActions, int maxDepth) {
-	generateEdges(maxActions, maxDepth);
-	calculateScores(maxActions);
+	ITablebase<N>::init(maxActions, maxDepth);
 	DEBUG_LOG("node count: " << m_nodes.size() << " edge count: " << m_edges.size() << std::endl);
 }
 
@@ -78,155 +252,107 @@ void InMemoryTablebase<N>::recursiveQuery(const GridState<N>& state, int currDep
 }
 
 template<uint N>
-void InMemoryTablebase<N>::generateEdges(uint64 maxActions, int maxDepth) {
-	std::deque<std::pair<GridState<N>, int>> stateQueue;
-	m_nodes[GridState<N>()] = std::make_pair(-1.0f, -1.0f);
-	stateQueue.push_back(std::make_pair(GridState<N>(), 0));
-
-	for (; ITablebase<N>::m_actionCount < maxActions && !stateQueue.empty(); ++ITablebase<N>::m_actionCount) {
-		auto [state, depth] = stateQueue.front();
-		stateQueue.pop_front();
-
-		// intermedate edges
-		uint emptyTiles = state.numEmptyTiles();
-		for(uint r = 0; r < N; ++r) {
-			for(uint c = 0; c < N; ++c) {
-				if(!state.isEmpty(r,c)) continue;
-
-				for(uint i = 0; i < 2; ++i) {
-					GridState<N> child = state;
-					child.writeTile(r, c, i + 1);
-					m_edges[state][child] = (i ? ITablebase<N>::m_fourChance : (1.0f - ITablebase<N>::m_fourChance)) / emptyTiles;
-					m_reverseEdges[child].push_back(state);
-					if ((maxDepth < 0 || depth < maxDepth) && m_nodes.count(child) == 0) {
-						m_nodes[child] = std::make_pair(-1.0f, -1.0f);
-						stateQueue.emplace_back(child, depth + 1);
-					}
-				}
-			}
-		}
-
-		// non-intermediate edges
-		for(uint i=0; i < 4; ++i) {
-			GridState<N> child = state;
-			switch (i) {
-			case 0: child.swipe(0, -1); break;
-			case 1: child.swipe(0, 1); break;
-			case 2: child.swipe(-1, 0); break;
-			case 3: child.swipe(1, 0); break;
-			}
-
-			if (child == state) continue;
-
-			m_edges[state][child] = -1;
-			m_reverseEdges[child].push_back(state);
-			if ((maxDepth < 0 || depth < maxDepth) && m_nodes.count(child) == 0) {
-				m_nodes[child] = std::make_pair(-1.0f, -1.0f);
-				stateQueue.emplace_back(child, depth + 1);
-			}
-		}
-	}
-
-	DEBUG_LOG("generateEdges exiting after " << ITablebase<N>::m_actionCount << " actions" << std::endl);
-	ITablebase<N>::m_actionCount = 0;
+void InMemoryTablebase<N>::setNode(const GridState<N>& node, float noninterScore, float interScore) {
+	m_nodes[node] = std::make_pair(noninterScore, interScore);
 }
 
-// We need to be careful about howe we traverse the graph here.
-// A DFS will run into dependency loop problems, for example
-// -- is an intermediate child of both -- and --
-// -4                                  4-     -4
-// Which causes us to try to get the score a second time before we're finished the first time.
-// To avoid these problems we can do a reverse BFS
 template<uint N>
-void InMemoryTablebase<N>::calculateScores(uint64 maxActions) {
-	std::deque<GridState<N>> stateQueue;
-	// Calculate all the trivial scores
-	for(const auto& p : m_nodes) {
+bool InMemoryTablebase<N>::hasNode(const GridState<N>& node) {
+	return m_nodes.count(node) == 1;
+}
+
+template<uint N>
+std::pair<float, float> InMemoryTablebase<N>::getNodeScores(const GridState<N>& node) {
+	return m_nodes[node];
+}
+
+template<uint N>
+void InMemoryTablebase<N>::pushToEdgeQueue(const GridState<N>& node, int depth) {
+	m_edgeQueue.push_back(std::make_pair(node, depth));
+}
+
+template<uint N>
+std::pair<GridState<N>, int> InMemoryTablebase<N>::popFromEdgeQueue() {
+	std::pair<GridState<N>, int> firstElement = m_edgeQueue.front();
+	m_edgeQueue.pop_front();
+	return firstElement;
+}
+
+template<uint N>
+bool InMemoryTablebase<N>::edgeQueueEmpty() {
+	return m_edgeQueue.empty();
+}
+
+template<uint N>
+void InMemoryTablebase<N>::addEdge(const GridState<N>& parent, const GridState<N>& child, float weight) {
+	m_edges[parent][child] = weight;
+	m_reverseEdges[child].push_back(parent);
+}
+
+template<uint N>
+bool InMemoryTablebase<N>::hasEdge(const GridState<N>& node) {
+	return m_edges.count(node) == 1;
+}
+
+template<uint N>
+std::vector<GridState<N>> InMemoryTablebase<N>::getEdges(const GridState<N>& node) {
+	std::vector<GridState<N>> edges;
+	for (const auto& p : m_edges[node]) {
+		edges.push_back(p.first);
+	}
+	return edges;
+}
+
+template<uint N>
+float InMemoryTablebase<N>::getEdgeWeight(const GridState<N>& parent, const GridState<N>& child) {
+	return m_edges[parent][child];
+}
+
+template<uint N>
+std::vector<GridState<N>> InMemoryTablebase<N>::getParents(const GridState<N>& child) {
+	std::vector<GridState<N>> parents;
+	auto it = m_reverseEdges.find(child);
+	if (it != m_reverseEdges.end()) {
+		for (const GridState<N>& prevState : it->second) {
+			parents.push_back(prevState);
+		}
+	}
+	return parents;
+}
+
+template<uint N>
+void InMemoryTablebase<N>::copyNodesToScoreQueue() {
+	for (const auto& p : m_nodes) {
 		const GridState<N>& state = p.first;
-		stateQueue.push_back(state);
-		bool foundScore = false;
+		m_scoreQueue.push_back(state);
 	}
+}
 
-	for (; ITablebase<N>::m_actionCount < maxActions && !stateQueue.empty(); ++ITablebase<N>::m_actionCount) {
-		GridState state = stateQueue.front();
-		stateQueue.pop_front();
-		auto [scoreFinal, scoreInter] = m_nodes[state];
-		if (scoreFinal != -1.0f && scoreInter != -1.0f) continue;
+template<uint N>
+void InMemoryTablebase<N>::pushToScoreQueue(const GridState<N>& node) {
+	m_scoreQueue.push_back(node);
+}
 
-		bool foundScore = false;
-		//Meets the win condition of having the max tile
-		// In the future this should be updated to handle alternate win conditions
-		if (state.hasTile(N * N + 1)) {
-			m_nodes[state] = std::make_pair(1.0f, 1.0f);
-			foundScore = true;
-		}
-		// Lost State
-		else if (!state.hasMoves() && state != GridState<N>()) {
-			m_nodes[state] = std::make_pair(0.0f, 0.0f);
-			foundScore = true;
-		}
-		// Assume any non-final edge node has a score of 0.5
-		// In the future this will use an analysis algorithm to make a better guess
-		else if (!m_edges.count(state)) {
-			DEBUG_LOG("I thought me were generating to infinite depth....");
-			DEBUG_ASSERT(0);
-			m_nodes[state] = std::make_pair(0.5f, 0.5f);
-			foundScore = true;
-		}
-		else {
-			if (scoreFinal == -1.0f) {
-				// check if all the dependent intermediate scores have been calculated
-				bool readyToCalculate = true;
-				float score = 0.0f;
-				for (const auto& p : m_edges[state]) {
-					auto& [childState, edgeWeight] = p;
-					if (edgeWeight == -1) {
-						if (m_nodes[childState].second == -1) {
-							readyToCalculate = false;
-							break;
-						}
-						score = std::max(score, m_nodes[childState].second);
-					}
-				}
-				if (readyToCalculate) {
-					m_nodes[state].first = score;
-					foundScore = true;
-				}
-			}
-			if (scoreInter == -1.0f) {
-				// check if all the dependent intermediate scores have been calculated
-				bool readyToCalculate = true;
-				float score = 0.0f;
-				for (const auto& p : m_edges[state]) {
-					auto& [childState, edgeWeight] = p;
-					if (edgeWeight != -1) {
-						if (m_nodes[childState].first == -1) {
-							readyToCalculate = false;
-							break;
-						}
-						score += edgeWeight * m_nodes[childState].first;
-					}
-				}
-				if (readyToCalculate) {
-					m_nodes[state].second = score;
-					foundScore = true;
-				}
-			}
-		}
-		if (foundScore) {
-			auto it = m_reverseEdges.find(state);
-			if (it != m_reverseEdges.end()) {
-				for (const GridState<N>& prevState : it->second) {
-					auto [prevScoreFinal, prevScoreInter] = m_nodes[state];
-					if (prevScoreFinal == -1.0f || prevScoreInter != -1.0f) {
-						stateQueue.push_back(prevState);
-					}
-				}
-			}
-		}
-	}
-	DEBUG_LOG("calculateScores exiting after " << ITablebase<N>::m_actionCount << " actions" << std::endl);
-	ITablebase<N>::m_actionCount = 0;
+template<uint N>
+GridState<N> InMemoryTablebase<N>::popFromScoreQueue() {
+	GridState<N> firstElement = m_scoreQueue.front();
+	m_scoreQueue.pop_front();
+	return firstElement;
+}
+
+template<uint N>
+bool InMemoryTablebase<N>::scoreQueueEmpty() {
+	return m_scoreQueue.empty();
+}
+
+template<uint N>
+void InMemoryTablebase<N>::addInterScore(const GridState<N>& node, float score) {
+	m_nodes[node].second = score;
+}
+
+template<uint N>
+void InMemoryTablebase<N>::addNonInterScore(const GridState<N>& node, float score) {
+	m_nodes[node].first = score;
 }
 
 template<uint N>
@@ -296,10 +422,31 @@ class SqliteTablebase : public ITablebase<N> {
 public:
 	SqliteTablebase(float fourChance, const std::string& dbName = "", int cacheSize = -8388608 /*8GiB*/);
 	virtual ~SqliteTablebase();
-	virtual void init(uint64 maxActions = UINT64_MAX, int maxDepth = -1) {}
+	//virtual void init(uint64 maxActions = UINT64_MAX, int maxDepth = -1) {}
 	virtual float query(const GridState<N>& state) const { return 0; }
 	virtual void recursiveQuery(const GridState<N>& state, int currDepth, int maxDepth, QueryResultsType<N>& results) const {}
 	virtual std::pair<int, int> bestMove(const GridState<N>& state) const { return { -1,-1 }; }
+protected:
+	//TODO implement
+	virtual void setNode(const GridState<N>& node, float noninterScore = -1, float interScore = -1) override {}
+	virtual bool hasNode(const GridState<N>& node) { return false; }
+	virtual std::pair<float, float> getNodeScores(const GridState<N>& node) override { return std::make_pair(-1.0f, -1.0f); }
+	virtual void pushToEdgeQueue(const GridState<N>& node, int depth) override {}
+	virtual std::pair<GridState<N>, int> popFromEdgeQueue() { return std::make_pair(GridState<N>(), 0); }
+	virtual bool edgeQueueEmpty() override { return false; }
+	virtual void addEdge(const GridState<N>& parent, const GridState<N>& child, float weight) {}
+	virtual bool hasEdge(const GridState<N>& node) { return false; }
+	virtual std::vector<GridState<N>> getEdges(const GridState<N>& node) { return std::vector<GridState<N>>(); }
+	virtual float getEdgeWeight(const GridState<N>& parent, const GridState<N>& child) { return -1; }
+	virtual std::vector<GridState<N>> getParents(const GridState<N>& child) { return std::vector<GridState<N>>(); }
+	//virtual void generateEdges(uint64 maxActions, int maxDepth) override;
+	//virtual void calculateScores(uint64 maxActions) override;
+	virtual void copyNodesToScoreQueue() {}
+	virtual void pushToScoreQueue(const GridState<N>& node) {}
+	virtual GridState<N> popFromScoreQueue() { return GridState<N>(); }
+	virtual bool scoreQueueEmpty() { return false; }
+	virtual void addInterScore(const GridState<N>& node, float score) {}
+	virtual void addNonInterScore(const GridState<N>& node, float score) {}
 private:
 	sqlite3* m_db;
 
