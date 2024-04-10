@@ -2,6 +2,8 @@
 .vscode
 build
 src/out
+src/external/sqlite3.c
+src/external/sqlite3.h
 src/CMakeSettings.json
 src/TemplateAdaptor.cc
 *.log

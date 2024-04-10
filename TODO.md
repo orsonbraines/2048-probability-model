@@ -1,6 +1,7 @@
 # TODO List
 
-1. Add a SQLite Tablebase implementation
+1. Finish stubbed SQLite Tablebase functions
+1. Add Transactions to SQLite Tablebase
 1. Generate complete Tablebases 3x3
 1. Add GridState analysis algorithms
 1. See if I can get the code compiling to web assembly so I can get a browser version of the game running

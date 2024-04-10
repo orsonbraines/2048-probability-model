@@ -51,6 +51,8 @@ public:
 	uint64 hash() const {
 		return ankerl::unordered_dense::ANKERL_UNORDERED_DENSE_NAMESPACE::detail::wyhash::hash(m_data, sizeof(m_data));
 	}
+	void* data() { return m_data; }
+	const void* data()  const{ return m_data; }
 private:
 	uint8_t m_data[(N+7)/8];
 };
@@ -65,6 +67,8 @@ public:
 	GridState() : m_grid() {}
 
 	const BITSET_T& getGrid() const { return m_grid; }
+	void* gridData() { return m_grid.data(); }
+	const void* gridData() const { return m_grid.data(); }
 
 	uint readTile(uint row, uint col) const;
 	void writeTile(uint row, uint col, uint tile);

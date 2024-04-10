@@ -27,6 +27,11 @@ endif()
 include_directories(${PROJECT_SOURCE_DIR} "external/unordered_dense/include" "external/rapidjson/include")
 
 option(STATIC_LINK "Static link libraries")
+if(MSVC)
+	option(BUILD_SQLITE3 "Build sqlite3 from source" ON)
+else()
+	option(BUILD_SQLITE3 "Build sqlite3 from source" OFF)
+endif()
 if(STATIC_LINK)
 	set(BUILD_SHARED_LIBS OFF)
 endif()
@@ -41,9 +46,6 @@ if(CODEGEN_STATUS AND NOT CODEGEN_STATUS EQUAL 0)
 	message(FATAL_ERROR "TemplateAdaptorGenerator.py FAILED: ${CODEGEN_STATUS}")
 endif()
 
-find_package(SQLite3 REQUIRED)
-include_directories(${SQLite3_INCLUDE_DIRS})
-
 add_executable(model_test
 	Common.h
 	Model.h
@@ -52,12 +54,26 @@ add_executable(model_test
 	TemplateAdaptor.cc
 )
 
-add_executable(tablebase_test
+if(NOT ${BUILD_SQLITE3})
+	find_package(SQLite3 REQUIRED)
+	include_directories(${SQLite3_INCLUDE_DIRS})
+else()
+	list(APPEND TABLEBASE_SOURCES
+		external/sqlite3.c
+		external/sqlite3.h
+	)
+	include_directories("external")
+endif()
+
+list(APPEND TABLEBASE_SOURCES
 	Common.h
 	Model.h
 	Tablebase.h
 	TBTest.cc
 )
+
+add_executable(tablebase_test ${TABLEBASE_SOURCES})
+
 target_link_libraries(tablebase_test ${SQLite3_LIBRARIES})
 
 find_package(Curses)
