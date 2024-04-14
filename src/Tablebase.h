@@ -19,13 +19,20 @@ using QueryResultsType = std::vector<std::tuple<int, GridState<N>, float>>;
 template<uint N>
 class ITablebase{
 public:
-	ITablebase(float fourChance) : m_fourChance(fourChance), m_actionCount{0} {}
+	ITablebase(float fourChance) :
+		m_fourChance(fourChance),
+		m_edgeQueueInitialized{ false },
+		m_scoreQueueInitialized{ false },
+		m_actionCount{ 0 },
+		m_totalActions{ 0 } {}
 	virtual ~ITablebase() {}
 	virtual void init(uint64 maxActions = UINT64_MAX, int maxDepth = -1);
+	virtual bool partialInit(uint64 maxActions, int maxDepth = -1);
 	virtual float query(const GridState<N>& state) const = 0;
 	virtual void recursiveQuery(const GridState<N>& state, int currDepth, int maxDepth, QueryResultsType<N>& results) const;
 	virtual std::pair<int, int> bestMove(const GridState<N>& state) const;
 protected:
+	virtual void initializeEdgeQueue();
 	virtual void generateEdges(uint64 maxActions, int maxDepth);
 	virtual void calculateScores(uint64 maxActions);
 	virtual void setNode(const GridState<N>& node, float noninterScore = -1, float interScore = -1) = 0;
@@ -46,20 +53,49 @@ protected:
 	virtual void addInterScore(const GridState<N>& node, float score) = 0;
 	virtual void addNonInterScore(const GridState<N>& node, float score) = 0;
 	const float m_fourChance;
+	bool m_edgeQueueInitialized;
+	bool m_scoreQueueInitialized;
 	uint64 m_actionCount;
+	uint64 m_totalActions;
 };
 
 template<uint N>
+void ITablebase<N>::initializeEdgeQueue() {
+	m_edgeQueueInitialized = true;
+	setNode(GridState<N>());
+	pushToEdgeQueue(GridState<N>(), 0);
+}
+
+template<uint N>
 void ITablebase<N>::init(uint64 maxActions, int maxDepth) {
+	initializeEdgeQueue();
 	generateEdges(maxActions, maxDepth);
+	copyNodesToScoreQueue();
+	m_scoreQueueInitialized = true;
 	calculateScores(maxActions);
 }
 
 template<uint N>
-void ITablebase<N>::generateEdges(uint64 maxActions, int maxDepth) {
-	setNode(GridState<N>());
-	pushToEdgeQueue(GridState<N>(), 0);
+bool ITablebase<N>::partialInit(uint64 maxActions, int maxDepth) {
+	if (!m_edgeQueueInitialized) {
+		initializeEdgeQueue();
+	}
+	if (!edgeQueueEmpty()) {
+		generateEdges(maxActions, maxDepth);
+		return false;
+	}
+	if (!m_scoreQueueInitialized) {
+		copyNodesToScoreQueue();
+		m_scoreQueueInitialized = true;
+	}
+	if (!scoreQueueEmpty()) {
+		calculateScores(maxActions);
+	}
+	return scoreQueueEmpty();
+}
 
+template<uint N>
+void ITablebase<N>::generateEdges(uint64 maxActions, int maxDepth) {
 	for (; m_actionCount < maxActions && !edgeQueueEmpty(); ++m_actionCount) {
 		auto [state, depth] = popFromEdgeQueue();
 
@@ -101,14 +137,13 @@ void ITablebase<N>::generateEdges(uint64 maxActions, int maxDepth) {
 		}
 	}
 
-	DEBUG_LOG("generateEdges exiting after " << m_actionCount << " actions" << std::endl);
+	m_totalActions += m_actionCount;
+	DEBUG_LOG("generateEdges exiting after " << m_actionCount << " actions (" << m_totalActions << " total)" << std::endl);
 	m_actionCount = 0;
 }
 
 template<uint N>
 void ITablebase<N>::calculateScores(uint64 maxActions) {
-	copyNodesToScoreQueue();
-
 	for (; m_actionCount < maxActions && !scoreQueueEmpty(); ++m_actionCount) {
 		GridState<N> state = popFromScoreQueue();
 		auto [scoreFinal, scoreInter] = getNodeScores(state);
@@ -183,7 +218,8 @@ void ITablebase<N>::calculateScores(uint64 maxActions) {
 			}
 		}
 	}
-	DEBUG_LOG("calculateScores exiting after " << m_actionCount << " actions" << std::endl);
+	m_totalActions += m_actionCount;
+	DEBUG_LOG("calculateScores exiting after " << m_actionCount << " actions (" << m_totalActions << " total)" << std::endl);
 	m_actionCount = 0;
 }
 

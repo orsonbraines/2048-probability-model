@@ -13,7 +13,7 @@ int main() {
 		//EmpiricalTablebase<2> eTablebase;	
 		std::remove("testdb.sqlite");
 		SqliteTablebase<2> sTablebase(0.2f, "testdb.sqlite");
-		sTablebase.init();
+		while(!sTablebase.partialInit(100));
 		bool same = (tablebase == sTablebase);
 		std::cout << "same? " << same << std::endl;
 		assert(same);

@@ -1,6 +1,5 @@
 # TODO List
 
-1. Add the option to partially initialize to the SQLite TableBase
 1. Add Transactions to SQLite Tablebase
 1. Generate complete Tablebases 3x3
 1. Add GridState analysis algorithms
