@@ -17,6 +17,14 @@ int main() {
 		bool same = (tablebase == sTablebase);
 		std::cout << "same? " << same << std::endl;
 		assert(same);
+
+		GridState<2> testInitState;
+		testInitState.writeTile(0, 0, 1);
+		auto p = sTablebase.bestMove(testInitState);
+		std::cout << p.first << p.second << std::endl;
+		QueryResultsType<2> queryResults;
+		sTablebase.recursiveQuery(testInitState, 0, 3, queryResults);
+		printQueryResults(std::cout, queryResults);
 	
 		//for (int i = 0; i < 1000000; ++i) {
 		//	if (i % 1000000 == 0) {

@@ -23,8 +23,8 @@ public:
 	virtual ~ITablebase() {}
 	virtual void init(uint64 maxActions = UINT64_MAX, int maxDepth = -1);
 	virtual float query(const GridState<N>& state) const = 0;
-	virtual void recursiveQuery(const GridState<N>& state, int currDepth, int maxDepth, QueryResultsType<N>& results) const = 0;
-	virtual std::pair<int, int> bestMove(const GridState<N>& state) const = 0;
+	virtual void recursiveQuery(const GridState<N>& state, int currDepth, int maxDepth, QueryResultsType<N>& results) const;
+	virtual std::pair<int, int> bestMove(const GridState<N>& state) const;
 protected:
 	virtual void generateEdges(uint64 maxActions, int maxDepth);
 	virtual void calculateScores(uint64 maxActions);
@@ -188,13 +188,60 @@ void ITablebase<N>::calculateScores(uint64 maxActions) {
 }
 
 template<uint N>
+std::pair<int, int> ITablebase<N>::bestMove(const GridState<N>& state) const {
+	float bestScore = 0;
+	GridState<N> bestState;
+	if (hasEdge(state)) {
+		std::vector<GridState<N>> children = getEdges(state);
+		// find best intermediate child score
+		for (const GridState<N>& child : children) {
+			if (getEdgeWeight(state, child) != -1) continue;
+			float score = getNodeScores(child).second;
+			if (score > bestScore) {
+				bestScore = score;
+				bestState = child;
+			}
+		}
+	}
+	for (uint i = 0; i < 4; ++i) {
+		GridState<N> stateClone = state;
+		std::pair<int, int> swipeMove;
+		switch (i) {
+		case 0: swipeMove = std::make_pair(0, -1); break;
+		case 1: swipeMove = std::make_pair(0, 1); break;
+		case 2: swipeMove = std::make_pair(-1, 0); break;
+		case 3: swipeMove = std::make_pair(1, 0); break;
+		}
+		stateClone.swipe(swipeMove.first, swipeMove.second);
+		if (stateClone == bestState) {
+			return swipeMove;
+		}
+	}
+	return std::make_pair(-1, -1);
+}
+
+template<uint N>
+void ITablebase<N>::recursiveQuery(const GridState<N>& state, int currDepth, int maxDepth, QueryResultsType<N>& results) const {
+	if (currDepth > maxDepth) return;
+	bool intermediate = currDepth & 1;
+	auto scores = getNodeScores(state);
+	results.emplace_back(std::make_tuple(currDepth, state, intermediate ? scores.second : scores.first));
+	if (hasEdge(state)) {
+		auto children = getEdges(state);
+		for (const auto& child : children) {
+			float edgeWeight = getEdgeWeight(state, child);
+			if ((!intermediate && edgeWeight != -1.0f) || (intermediate && edgeWeight == -1.0f)) continue;
+			recursiveQuery(child, currDepth + 1, maxDepth, results);
+		}
+	}
+}
+
+template<uint N>
 class InMemoryTablebase : public ITablebase<N> {
 public:
 	InMemoryTablebase(float fourChance) : ITablebase<N>(fourChance) {}
 	virtual void init(uint64 maxActions = UINT64_MAX, int maxDepth = -1) override;
 	virtual float query(const GridState<N>& state) const override;
-	virtual void recursiveQuery(const GridState<N>& state, int currDepth, int maxDepth, QueryResultsType<N>& results) const override;
-	virtual std::pair<int, int> bestMove(const GridState<N>& state) const override;
 	void dump(std::ostream &o) const;
 protected:
 	virtual void setNode(const GridState<N>& node, float noninterScore = -1, float interScore = -1) override;
@@ -233,22 +280,6 @@ template<uint N>
 float InMemoryTablebase<N>::query(const GridState<N>& state) const {
 	auto it = m_nodes.find(state);
 	return it == m_nodes.end() ? -1.0f : it->second.first;
-}
-
-template<uint N>
-void InMemoryTablebase<N>::recursiveQuery(const GridState<N>& state, int currDepth, int maxDepth, QueryResultsType<N>& results) const {
-	if(currDepth > maxDepth) return;
-	bool intermediate = currDepth & 1;
-	results.emplace_back(std::make_tuple(currDepth, state, intermediate ? m_nodes.at(state).second : m_nodes.at(state).first));
-	auto it = m_edges.find(state);
-	if(it != m_edges.end()) {
-		for(const auto &p : it->second) {
-			const GridState<N>& childState = p.first;
-			float edgeWeight = p.second;
-			if((!intermediate && edgeWeight != -1.0f) || (intermediate && edgeWeight == -1.0f)) continue;
-			recursiveQuery(childState, currDepth + 1, maxDepth, results);
-		}
-	}
 }
 
 template<uint N>
@@ -383,51 +414,12 @@ void InMemoryTablebase<N>::dump(std::ostream &o) const {
 }
 
 template<uint N>
-std::pair<int, int> InMemoryTablebase<N>::bestMove(const GridState<N>& state) const {
-	float bestScore = 0;
-	GridState<N> bestState;
-	auto it = m_edges.find(state);
-	if (it != m_edges.end()) {
-		const ankerl::unordered_dense::map<GridState<N>, float >& edges = it->second;
-		// find best intermediate child score
-		for (const auto& p : edges) {
-			if (p.second != -1) continue;
-			const GridState<N>& endState = p.first;
-			float score = m_nodes.at(endState).second;
-			if (score > bestScore) {
-				bestScore = score;
-				bestState = endState;
-			}
-		}
-	}
-	for (uint i = 0; i < 4; ++i) {
-		GridState<N> stateClone = state;
-		std::pair<int, int> swipeMove;
-		switch (i) {
-		case 0: swipeMove = std::make_pair(0, -1); break;
-		case 1: swipeMove = std::make_pair(0, 1); break;
-		case 2: swipeMove = std::make_pair(-1, 0); break;
-		case 3: swipeMove = std::make_pair(1, 0); break;
-		}
-		stateClone.swipe(swipeMove.first, swipeMove.second);
-		if (stateClone == bestState) {
-			return swipeMove;
-		}
-	}
-	return std::make_pair(-1, -1);
-}
-
-template<uint N>
 class SqliteTablebase : public ITablebase<N> {
 public:
 	SqliteTablebase(float fourChance, const std::string& dbName = "", int cacheSize = -8388608 /*8GiB*/);
 	virtual ~SqliteTablebase();
-	//virtual void init(uint64 maxActions = UINT64_MAX, int maxDepth = -1) {}
 	virtual float query(const GridState<N>& state) const override;
-	virtual void recursiveQuery(const GridState<N>& state, int currDepth, int maxDepth, QueryResultsType<N>& results) const {}
-	virtual std::pair<int, int> bestMove(const GridState<N>& state) const { return { -1,-1 }; }
 protected:
-	//TODO implement
 	virtual void setNode(const GridState<N>& node, float noninterScore = -1, float interScore = -1) override;
 	virtual bool hasNode(const GridState<N>& node) const override;
 	virtual std::pair<float, float> getNodeScores(const GridState<N>& node) const override;
@@ -439,8 +431,6 @@ protected:
 	virtual std::vector<GridState<N>> getEdges(const GridState<N>& node) const override;
 	virtual float getEdgeWeight(const GridState<N>& parent, const GridState<N>& child) const override;
 	virtual std::vector<GridState<N>> getParents(const GridState<N>& child) const override;
-	//virtual void generateEdges(uint64 maxActions, int maxDepth) override;
-	//virtual void calculateScores(uint64 maxActions) override;
 	virtual void copyNodesToScoreQueue() override;
 	virtual void pushToScoreQueue(const GridState<N>& node) override;
 	virtual GridState<N> popFromScoreQueue() override;
