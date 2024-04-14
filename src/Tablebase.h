@@ -455,6 +455,8 @@ public:
 	SqliteTablebase(float fourChance, const std::string& dbName = "", int cacheSize = -8388608 /*8GiB*/);
 	virtual ~SqliteTablebase();
 	virtual float query(const GridState<N>& state) const override;
+	virtual void generateEdges(uint64 maxActions, int maxDepth) override { beginTransaction(); ITablebase<N>::generateEdges(maxActions, maxDepth); commitTransaction(); }
+	virtual void calculateScores(uint64 maxActions) override { beginTransaction(); ITablebase<N>::calculateScores(maxActions); commitTransaction(); }
 protected:
 	virtual void setNode(const GridState<N>& node, float noninterScore = -1, float interScore = -1) override;
 	virtual bool hasNode(const GridState<N>& node) const override;
@@ -474,7 +476,20 @@ protected:
 	virtual void addInterScore(const GridState<N>& node, float score) override;
 	virtual void addNonInterScore(const GridState<N>& node, float score) override;
 private:
+	void beginTransaction() {
+		CHECK_RETURN_CODE(sqlite3_step(m_psBegin), SQLITE_DONE);
+		CHECK_RETURN_CODE(sqlite3_reset(m_psBegin), SQLITE_OK);
+	}
+
+	void commitTransaction() {
+		CHECK_RETURN_CODE(sqlite3_step(m_psCommit), SQLITE_DONE);
+		CHECK_RETURN_CODE(sqlite3_reset(m_psCommit), SQLITE_OK);
+	}
+
 	sqlite3* m_db;
+
+	sqlite3_stmt* m_psBegin;
+	sqlite3_stmt* m_psCommit;
 
 	sqlite3_stmt* m_psInsertNode;
 	sqlite3_stmt* m_psUpdateNodeInter;
@@ -498,6 +513,8 @@ private:
 
 	static constexpr char PRAGMA_SYNCHRONOUS_SQL[] = "PRAGMA synchronous = OFF;";
 	static constexpr char PRAGMA_JOURNAL_SQL[] = "PRAGMA journal_mode = MEMORY;";
+	static constexpr char BEGIN_SQL[] = "BEGIN;";
+	static constexpr char COMMIT_SQL[] = "COMMIT;";
 
 	static constexpr char CREATE_TABLE_NODE_SQL[] = "CREATE TABLE node (\n"
 		"grid_state BLOB PRIMARY KEY,\n"
@@ -574,6 +591,9 @@ SqliteTablebase<N>::SqliteTablebase(float fourChance, const std::string& dbName,
 	CHECK_RETURN_CODE(sqlite3_exec(m_db, CREATE_TABLE_CONFIG_SQL, nullptr, nullptr, nullptr), SQLITE_OK);
 	CHECK_RETURN_CODE(sqlite3_exec(m_db, CREATE_INDEX_REVERSE_EDGE_SQL, nullptr, nullptr, nullptr), SQLITE_OK);
 
+	CHECK_RETURN_CODE(sqlite3_prepare_v3(m_db, BEGIN_SQL, -1, SQLITE_PREPARE_PERSISTENT, &m_psBegin, nullptr), SQLITE_OK);
+	CHECK_RETURN_CODE(sqlite3_prepare_v3(m_db, COMMIT_SQL, -1, SQLITE_PREPARE_PERSISTENT, &m_psCommit, nullptr), SQLITE_OK);
+
 	CHECK_RETURN_CODE(sqlite3_prepare_v3(m_db, INSERT_NODE_SQL, -1, SQLITE_PREPARE_PERSISTENT, &m_psInsertNode, nullptr), SQLITE_OK);
 	CHECK_RETURN_CODE(sqlite3_prepare_v3(m_db, UPDATE_NODE_INTER_SQL, -1, SQLITE_PREPARE_PERSISTENT, &m_psUpdateNodeInter, nullptr), SQLITE_OK);
 	CHECK_RETURN_CODE(sqlite3_prepare_v3(m_db, UPDATE_NODE_NONINTER_SQL, -1, SQLITE_PREPARE_PERSISTENT, &m_psUpdateNodeNoninter, nullptr), SQLITE_OK);
@@ -597,6 +617,9 @@ SqliteTablebase<N>::SqliteTablebase(float fourChance, const std::string& dbName,
 
 template<uint N>
 SqliteTablebase<N>::~SqliteTablebase() {
+	sqlite3_finalize(m_psBegin);
+	sqlite3_finalize(m_psCommit);
+
 	sqlite3_finalize(m_psInsertNode);
 	sqlite3_finalize(m_psUpdateNodeInter);
 	sqlite3_finalize(m_psUpdateNodeNoninter);
