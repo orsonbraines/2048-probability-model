@@ -22,9 +22,8 @@ int main() {
 		//InMemoryTablebase<2> tablebase(0.2f);
 		//tablebase.init();
 		//EmpiricalTablebase<2> eTablebase;	
-		std::remove("testdb.sqlite");
 		SqliteTablebase<3> sTablebase(0.2f, "testdb.sqlite");
-		while(!s_interrupted && !sTablebase.partialInit(1000));
+		while(!s_interrupted && !sTablebase.partialInit(25000));
 		//bool same = (tablebase == sTablebase);
 		//std::cout << "same? " << same << std::endl;
 		//assert(same);
@@ -57,8 +56,6 @@ int main() {
 	}
 	catch (const std::runtime_error& e) {
 		std::cerr << e.what() << std::endl;
-		//std::remove("testdb.sqlite");
 		return 1;
 	}
-	//std::remove("testdb.sqlite");
 }
